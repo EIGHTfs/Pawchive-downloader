@@ -7,11 +7,10 @@
  *         查重跳过已有文件；.tmp 断点续传；429/5xx 自动重试；串行 TPS 限速。
  *
  * 用法：
- *   node cli.js <url> <path> [--dryrun] [--offset N] [--length N] [--concurrency N] [--post-interval N] [--index <索引文件>]
+ *   node cli.js <url> <path> [--dryrun] [--offset N] [--length N] [--concurrency N] [--index <索引文件>]
  *   --length N       只拉/下载最新 N 个帖子（如 --length 10 = 最新 10 帖）
  *   --offset N       从第 N 个帖子开始（配合 --length 分批）
  *   --concurrency N  并发下载数（默认 1 串行，受 TPS 限速约束），如 --concurrency 3
- *   --post-interval N  每下载完一个帖子后，等待 N 秒再开始下一个帖子（反爬限频，默认 5s）
  *   --index <文件>   直接读已有索引文件（.pawchive/*.index.json）生成计划下载，0 API 请求
  *   例：node cli.js https://pawchive.pw/patreon/user/96944064 "/volume1/VirtualDSM/(Pawchive)/Pawchive" --dryrun
  *   例：node cli.js https://pawchive.pw/patreon/user/96944064 "/volume1/VirtualDSM/(Pawchive)/Pawchive" --length 10
@@ -68,6 +67,7 @@ const CONFIG = {
   apiRetryStatus: [429, 500, 502, 503, 504], // 可重试的 HTTP 状态
   downloadTimeoutMs: 300000,  // 单文件下载超时（5 分钟）
   tempSuffix: process.env.PAWCHIVE_TEMP_SUFFIX || '.tmp', // 断点续传临时文件后缀（env 可配）
+  strictVerify: process.env.PAWCHIVE_STRICT_VERIFY === '1', // 强校验模式（默认关）：下载完计算本地 sha256 vs 目标 serverPath hash——不符优先修复（重下）不保留坏文件
 
   // 命名模板（env 可配；默认纯作者名 / 纯标题 / 原名）
   creatorDirFormat: process.env.PAWCHIVE_CREATOR_DIR_FORMAT || '{creator_name}',
@@ -85,8 +85,7 @@ const CONFIG = {
   tps: Number(process.env.PAWCHIVE_TPS) || 1,
   downloadRetryTimes: Number(process.env.PAWCHIVE_RETRY_TIMES) || 10,
   downloadRetryIntervalMs: Number(process.env.PAWCHIVE_RETRY_INTERVAL_MS) || 3000,
-  postIntervalDefault: Number(process.env.PAWCHIVE_POST_INTERVAL) || 5,
-  slowSpeedKb: Number(process.env.PAWCHIVE_SLOW_SPEED_KB) || 50,
+  slowSpeedKb: Number(process.env.PAWCHIVE_SLOW_SPEED_KB) || 5,
   slowDetectMs: Number(process.env.PAWCHIVE_SLOW_DETECT_MS) || 10000,
   slowWaitMs: Number(process.env.PAWCHIVE_SLOW_WAIT_MS) || 60000,
   slowMax: Number(process.env.PAWCHIVE_SLOW_MAX) || 3,
@@ -112,6 +111,24 @@ const CURL_BIN = (() => {
   return 'curl'; // 兜底走 PATH（spawn 找不到时显式报错，不静默）
 })();
 
+// ---------- 孤儿下载进程防护（spawn 的 curl 不随父进程退出而终止） ----------
+const activeCurls = new Set(); // 全局跟踪运行中的 curl 子进程
+/** 注册 curl 子进程（spawn 后调用）——close/error 时自动移除 */
+function trackCurl(p) {
+  activeCurls.add(p);
+  const untrack = () => activeCurls.delete(p);
+  p.on('close', untrack);
+  p.on('error', untrack);
+  return p;
+}
+/** 统一终止所有运行中的 curl（进程退出/信号时调用——覆盖父进程死亡场景，防孤儿下载） */
+function killAllCurls() {
+  for (const p of activeCurls) { try { p.kill('SIGTERM'); } catch { /* 已退出 */ } }
+}
+// 父进程退出/被杀信号 → 立即 kill 全部 curl（正常 stop/重启场景；kill -9 无法拦截由 server 启动清扫兜底）
+process.on('exit', killAllCurls);
+for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(sig, () => { killAllCurls(); process.exit(0); });
+
 // ---------- 日志（ISO 时间 + 事件；下载/迁移共用，migrate.js 复用） ----------
 const LOG_PATH = process.env.PAWCHIVE_LOG || path.join(__dirname, 'pawchive.log');
 function log(event) {
@@ -123,7 +140,10 @@ function log(event) {
 // /patreon/user/96944064            → service=patreon  user=96944064
 // /fanbox/user/6570768/post/1836570 → 另含 post_id=1836570
 function parseWebpageUrl(url) {
-  const parts = new URL(url).pathname.split('/').filter(Boolean);
+  // 2026-09-29：相对路径自动补全域名（用户输入 patreon/user/49965584 不带协议/主机——拼 webBase 避免 new URL Invalid）
+  let u = String(url || '').trim();
+  if (u && !/^[a-z][a-z0-9+.-]*:\/\//i.test(u)) u = `${CONFIG.webBase}/${u.replace(/^\/+/, '')}`;
+  const parts = new URL(u).pathname.split('/').filter(Boolean);
   const service = parts[0] || null;
   const userId = parts[1] === 'user' ? parts[2] || null : null;
   const postId = parts[3] === 'post' ? parts[4] || null : null;
@@ -641,7 +661,7 @@ async function downloadNetdiskFiles(detail, postDir, hashIndex) {
         continue;
       }
       const url = p.downloadUrl(id);
-      const netdiskTmp = path.join(postDir, `netdisk_${type}_${id}${CONFIG.tempSuffix}`);
+      const netdiskTmp = path.join(postDir, sanitizeName(`netdisk_${type}_${id}`) + CONFIG.tempSuffix); // dropbox 等以完整 URL 作 id：tmp 名必须消毒（否则 https:// 的 // 被当路径分隔 → 创建 netdisk_dropbox_https: 目录树）
       // 断点续传：Drive 直链支持 Range（accept-ranges 实测 206）；疑似病毒确认页残留（<64KB 小文件）删掉从头下
       let tempSize = 0;
       try { if ((await fs.promises.stat(netdiskTmp)).size < 65536) await fs.promises.rm(netdiskTmp, { force: true }).catch(() => {}); } catch { /* 无残留 */ }
@@ -672,7 +692,16 @@ async function downloadNetdiskFiles(detail, postDir, hashIndex) {
           try { size = (await fs.promises.stat(netdiskTmp)).size; } catch { /* 0 */ }
         }
       }
-      const name = sanitizeName(result.disposition || `${type}_${id}.zip`); // 响应头原始文件名，失败退 <type>_<ID>.zip
+      // 通用内容校验：响应若为 HTML 页（dropbox 失效链接返回网页、drive 确认页重试后仍异常等）→ 视为失败不落盘
+      const headHtml = await fs.promises.readFile(netdiskTmp).then(b => b.subarray(0, 512).toString('utf8')).catch(() => '');
+      if (/^\s*<(!doctype\s+html|html)/i.test(headHtml)) {
+        console.log(`  [网盘失败] ${type}:${id.slice(0, 50)}（响应为 HTML 页，非文件）`);
+        log(`[下载] 网盘 ${type}:${id} 失败（响应为 HTML 页）`);
+        await fs.promises.rm(netdiskTmp, { force: true }).catch(() => {});
+        continue;
+      }
+      const fallbackName = (t, i) => { const m = /[^/?#]+(?=\?|$)/.exec(String(i).split('#')[0]); return m ? `${t}_${m[0]}` : `${t}_${i}`; }; // fallback 取 URL 末段文件名（如 dropbox 链接的 Miku_Study...mp4），避免整 URL 作文件名
+      const name = sanitizeName(result.disposition || fallbackName(type, id)); // 响应头原始文件名，失败退 <type>_<URL末段>
       const final = path.join(postDir, name);
       if (await fileExists(final)) { // 本目录已下载（存在即跳过）
         await fs.promises.rm(netdiskTmp, { force: true }).catch(() => {});
@@ -694,12 +723,55 @@ async function downloadNetdiskFiles(detail, postDir, hashIndex) {
   return out;
 }
 
+/** 计算文件 sha256（流式——大文件不占内存；失败返回 null） */
+async function sha256File(filePath) {
+  try {
+    const h = crypto.createHash('sha256');
+    await new Promise((resolve, reject) => {
+      const rs = fs.createReadStream(filePath);
+      rs.on('data', d => h.update(d));
+      rs.on('end', resolve);
+      rs.on('error', reject);
+    });
+    return h.digest('hex');
+  } catch { return null; }
+}
+
+/** 跨进程文件锁（2026-09-29——同 serverPath 并发多 cli 防重复下载）：.pawchive/locks/<sha1(serverPath)>.lock
+ * fs.open('wx') 原子创建——同文件并发只有一个拿锁；拿不到=别处在下 → 返回 null（调用方跳过）；
+ * 锁内容写 pid；mtime 超 24h 视为死锁（进程崩溃残留）自动清理重试 */
+const LOCK_STALE_MS = 24 * 3600 * 1000;
+async function acquireLock(serverPath) {
+  const dir = path.join(CONFIG.dataRoot || '', '.pawchive', 'locks');
+  await fs.promises.mkdir(dir, { recursive: true }).catch(() => {});
+  const lockPath = path.join(dir, crypto.createHash('sha1').update(serverPath).digest('hex').slice(0, 24) + '.lock');
+  for (let i = 0; i < 2; i++) {
+    try {
+      const fh = await fs.promises.open(lockPath, 'wx');
+      await fh.writeFile(String(process.pid)).catch(() => {});
+      await fh.close().catch(() => {});
+      return lockPath;
+    } catch (e) {
+      if (e && e.code === 'EEXIST') {
+        try {
+          const st = await fs.promises.stat(lockPath);
+          if (Date.now() - st.mtimeMs > LOCK_STALE_MS) { await fs.promises.rm(lockPath, { force: true }).catch(() => {}); continue; }
+        } catch { continue; }
+        return null; // 别处 cli 正在下载——跳过
+      }
+      return null;
+    }
+  }
+  return null;
+}
+async function releaseLock(lockPath) { if (lockPath) await fs.promises.rm(lockPath, { force: true }).catch(() => {}); }
+
 /**
  * 下载单个文件到 savePath（流式写 .tmp，完成后重命名）。
  * @param onProgress 进度回调 {filename, doneBytes, total, percent, speed}
  * 返回状态：'exists'（已有文件跳过）| 'downloaded'（完成）| 'failed:msg'
  */
-async function downloadFile(job, { onProgress = null, expectedSize: optExpected = null } = {}) {
+async function downloadFile(job, { onProgress = null, expectedSize: optExpected = null, abortCtl = null } = {}) {
   const finalPath = job.savePath;
   if (await fileExists(finalPath)) return { status: 'exists', job };
   const tmpPath = `${finalPath}${CONFIG.tempSuffix}`;
@@ -735,10 +807,11 @@ async function downloadFile(job, { onProgress = null, expectedSize: optExpected 
   };
 
   for (let attempt = 0; attempt <= CONFIG.downloadRetryTimes; attempt++) {
+    if (abortCtl && abortCtl.shouldAbort()) return { status: 'failed:aborted', job }; // 任务 abort（2026-09-29——真中断级联）
     await tpsGate(); // 每次建连前限速，保持每秒 <= tps 个连接
     try {
       const result = await streamOnce(job.fileUrl, tmpPath, tempSize, progressCb, {
-        shouldAbort: () => slowSince > 0 && Date.now() - slowSince > CONFIG.slowDetectMs,
+        shouldAbort: () => (abortCtl && abortCtl.shouldAbort ? abortCtl.shouldAbort() : false) || (slowSince > 0 && Date.now() - slowSince > CONFIG.slowDetectMs), // 合并：外部 abort + 慢速退避
       });
       if (result.status !== 'ok') {
         // 慢速退避：curl 被 SIGTERM（exit 143）且确实是限速 → 等待窗口恢复后续传
@@ -831,6 +904,26 @@ async function downloadFile(job, { onProgress = null, expectedSize: optExpected 
         filename: job.filename, doneBytes: result.totalSize || actualSize, total: result.totalSize,
         percent: 100, speed: 0, state: 'done',
       });
+      // 强校验模式（PAWCHIVE_STRICT_VERIFY=1 默认关）：下载完成计算本地 sha256 vs 目标 serverPath hash（内容寻址）
+      // 不符 → 本轮优先修复（删坏文件 + 整文件重下——不是不重下）；重下耗尽配额才判失败（对齐用户语义：不符→修复，修复不了→整文件重下）
+      if (CONFIG.strictVerify) {
+        const targetHash = /([a-f0-9]{64})/i.exec(job.serverPath);
+        if (targetHash) {
+          const localHash = await sha256File(job.savePath);
+          if (localHash && localHash !== targetHash[1]) {
+            await fs.promises.rm(job.savePath, { force: true }).catch(() => {}); // 删坏文件（不把坏文件当成功）
+            if (attempt < CONFIG.downloadRetryTimes) { // 本轮重下：重新下载整文件（强校验内容寻址——只用配额内次数，避免死循环）
+              console.log(`  [强校验不符 ${attempt + 1}/${CONFIG.downloadRetryTimes}] ${job.filename}（内容不一致——已删坏文件，本轮重新下载）`);
+              log(`[下载] 强校验不符重下 ${job.filename}`);
+              await sleep(CONFIG.downloadRetryIntervalMs);
+              tempSize = 0; spLast = 0; spLastTime = 0; speed = 0; slowSince = 0; // 归零续传态 → 整文件重下（续传是损坏文件无意义）
+              continue;
+            }
+            console.log(`  [强校验不符] ${job.filename}（sha256 不匹配目标，重下 ${CONFIG.downloadRetryTimes} 次仍不符——不再保留失败）`);
+            return { status: 'failed:hash_mismatch', job };
+          }
+        }
+      }
       return { status: 'downloaded', job, size: actualSize };
     } catch (err) {
       const status = extractStatus(err);
@@ -839,6 +932,8 @@ async function downloadFile(job, { onProgress = null, expectedSize: optExpected 
         console.log(`  [重试 ${attempt + 1}/${CONFIG.downloadRetryTimes}] ${job.filename} (${status})`);
         await sleep(CONFIG.downloadRetryIntervalMs);
         // 同样保留 .tmp 断点续传
+        // fsync（2026-09-29 对齐）：续传前强制落盘再 stat（防 OS 缓存 stat 与实际不一致——空洞定位错）
+        try { const fd = await fs.promises.open(tmpPath, 'r+'); await fd.sync().catch(() => {}); await fd.close(); } catch { /* .tmp 不存在则 0 */ }
         try { tempSize = (await fs.promises.stat(tmpPath)).size; } catch { tempSize = 0; }
         spLast = tempSize; spLastTime = 0; speed = 0; slowSince = 0;
         continue;
@@ -870,7 +965,7 @@ async function streamOnce(fileUrl, tmpPath, tempSize, onProgress = null, abortCt
       '-o', tmpPath,
       fileUrl,
     ];
-    const p = spawn(CURL_BIN, args, { stdio: ['ignore', 'pipe', 'pipe'] }); // stdout=头文本、stderr=错误，均须 pipe（ignore 会使对应流为 null）
+    const p = trackCurl(spawn(CURL_BIN, args, { stdio: ['ignore', 'pipe', 'pipe'] })); // stdout=头文本、stderr=错误，均须 pipe（ignore 会使对应流为 null）；trackCurl 全局跟踪防孤儿
     let stderr = '', headerText = '';
     p.stdout.on('data', c => { headerText += c; }); // -D - 的头文本（-o 已把 body 写文件）
     p.stderr.on('data', c => { stderr += c; });
@@ -905,13 +1000,13 @@ async function streamOnce(fileUrl, tmpPath, tempSize, onProgress = null, abortCt
 /** 真实下载不落盘测速（curl -o /dev/null，窗口内速度）；返回 {speedBps, sizeB, code} */
 function probeFileSpeed(fileUrl, windowMs = 5000) {
   return new Promise(resolve => {
-    const p = spawn(CURL_BIN, [
+    const p = trackCurl(spawn(CURL_BIN, [
       '-s', '-o', '/dev/null', '-w', '%{speed_download} %{size_download}',
       '--http1.1', '--connect-timeout', String(CONFIG.curlConnectTimeout), '--max-time', String(Math.ceil(windowMs / 1000) + 1),
       '-H', `User-Agent: ${CONFIG.userAgent}`,
       '-H', 'Accept: */*',
       fileUrl,
-    ], { stdio: ['ignore', 'pipe', 'ignore'] });
+    ], { stdio: ['ignore', 'pipe', 'ignore'] }));
     let out = '';
     p.stdout.on('data', c => { out += c; });
     p.on('close', code => {
@@ -1078,7 +1173,7 @@ function buildPostIndexHtml(post, creatorName, postDirDisplay, files) {
  * links: 关联渠道账号 [{id, name, service}]
  */
 /** 下载创作者头像（Pawchive og:image 模式：{webBase}/icons/{service}/{id}）；主账号 + 关联渠道各账号都要；已存在跳过（avatars/avatar-{service}-{id}.*）。返回 [{service,id,name,rel,size,exists}] 供创作者 html 展示 */
-async function downloadCreatorAvatars(plan) {
+async function downloadCreatorAvatars(plan, abortCtl = null) {
   const avatarsDir = path.join(plan.creatorDir, 'avatars');
   await fs.promises.mkdir(avatarsDir, { recursive: true });
   const out = [];
@@ -1097,7 +1192,7 @@ async function downloadCreatorAvatars(plan) {
       const url = `${CONFIG.webBase}/icons/${acc.service}/${acc.id}`;
       const tmp = path.join(avatarsDir, `${prefix}${CONFIG.tempSuffix}`);
       let result;
-      try { result = await streamOnce(url, tmp, 0, null, { shouldAbort: () => false }); } catch { result = { status: 'err' }; }
+      try { result = await streamOnce(url, tmp, 0, null, { shouldAbort: () => (abortCtl && abortCtl.shouldAbort ? abortCtl.shouldAbort() : false) }); } catch { result = { status: 'err' }; }
       if (result.status === 'ok') {
         const newHash = await fileSha256(tmp).catch(() => null);
         const oldHash = await fileSha256(full).catch(() => null);
@@ -1123,7 +1218,7 @@ async function downloadCreatorAvatars(plan) {
     const url = `${CONFIG.webBase}/icons/${acc.service}/${acc.id}`;
     const tmp = path.join(avatarsDir, `${prefix}${CONFIG.tempSuffix}`);
     let result;
-    try { result = await streamOnce(url, tmp, 0, null, { shouldAbort: () => false }); } catch { result = { status: 'err' }; }
+    try { result = await streamOnce(url, tmp, 0, null, { shouldAbort: () => (abortCtl && abortCtl.shouldAbort ? abortCtl.shouldAbort() : false) }); } catch { result = { status: 'err' }; }
     if (result.status !== 'ok') { await fs.promises.rm(tmp, { force: true }).catch(() => {}); continue; }
     let size = 0;
     try { size = (await fs.promises.stat(tmp)).size; } catch { /* 0 */ }
@@ -1290,6 +1385,13 @@ async function downloadWithDedup(job, hashIndex, inFlight, opts = {}) {
   const rec = hashIndex.get(job.serverPath); // html 记录 {rel, size}
   const expected = rec && rec.size != null ? Number(rec.size) : (job.apiSize ?? null); // 大小基准：html 记录 → API size 兜底
 
+  // .tmp 分类（2026-09-29——不清续传、只清冗余）：正式文件已存在 + .tmp 残留 = 冗余（正式在——续传无意义）→ 清；
+  // 正式不存在 + .tmp 在 = 断点续传基础（保留供续传——清了续传就断）
+  if (await fileExists(job.savePath) && await fileExists(job.savePath + CONFIG.tempSuffix)) {
+    await fs.promises.rm(job.savePath + CONFIG.tempSuffix, { force: true }).catch(() => {});
+    log(`[.tmp 冗余清理] ${job.filename}（正式已存在——清除残留 .tmp）`);
+  }
+
   // ---- 1) 去重：目标已存在时按大小判定（正确 → 跳过；大小不符 → 覆盖重下） ----
   if (await fileExists(job.savePath)) {
     if (expected == null) return { status: 'exists', job }; // 无记录可比，保守跳过
@@ -1311,6 +1413,7 @@ async function downloadWithDedup(job, hashIndex, inFlight, opts = {}) {
     const rec2 = hashIndex.get(job.serverPath);
     if (rec2 && rec2.rel && rec2.rel !== job.savePath && await fileExists(rec2.rel)) {
       const how = await linkOrCopy(rec2.rel, job.savePath);
+      await fs.promises.rm(job.savePath + CONFIG.tempSuffix, { force: true }).catch(() => {}); // 链接复用成功——正式已就位——清冗余 .tmp
       return { status: how === 'linked' ? 'linked' : 'copied', job };
     }
     if (await fileExists(job.savePath)) return { status: 'exists', job };
@@ -1319,11 +1422,14 @@ async function downloadWithDedup(job, hashIndex, inFlight, opts = {}) {
   // ---- 4) 硬链接去重复用：记录 rel 本地存在 → 0 下载复用（校验过后） ----
   if (rec && rec.rel && rec.rel !== job.savePath && await fileExists(rec.rel)) {
     const how = await linkOrCopy(rec.rel, job.savePath);
+    await fs.promises.rm(job.savePath + CONFIG.tempSuffix, { force: true }).catch(() => {}); // 链接复用成功——正式已就位——清冗余 .tmp
     return { status: how === 'linked' ? 'linked' : 'copied', job };
   }
 
-  // ---- 5) 下载 ----
-  const p = downloadFile(job, { ...opts, expectedSize: expected });
+  // ---- 5) 下载（跨进程文件锁：同 serverPath 并发多 cli 只有一个下——拿不到=别处 cli 在下 → 跳过防重复） ----
+  const lockPath = await acquireLock(job.serverPath);
+  if (!lockPath) return { status: 'exists', job }; // 跨进程锁（2026-09-29——别处正在下载——跳过）
+  const p = downloadFile(job, { ...opts, expectedSize: expected, abortCtl: opts.abortCtl || null }); // 任务 abort 级联（2026-09-29——真中断）
   inFlight.set(job.serverPath, p);
   try {
     const r = await p;
@@ -1334,6 +1440,7 @@ async function downloadWithDedup(job, hashIndex, inFlight, opts = {}) {
     return r;
   } finally {
     inFlight.delete(job.serverPath);
+    await releaseLock(lockPath); // 跨进程锁释放（2026-09-29）
   }
 }
 
@@ -1383,9 +1490,9 @@ async function writeOnePostIndex(post, jobs, creatorName, targetPath) {
 
 /** 创作者级总览 html（帖子导航 + 关联渠道 links）；串行写锁：并发多帖完成时逐个刷新，防同文件写交错 */
 let creatorIndexWriteChain = Promise.resolve();
-async function writeCreatorIndex(plan, targetPath) {
+async function writeCreatorIndex(plan, targetPath, abortCtl = null) {
   const task = creatorIndexWriteChain.then(async () => {
-    const avatars = await downloadCreatorAvatars(plan); // 头像：主账号 + 关联渠道各账号（已存在跳过）
+    const avatars = await downloadCreatorAvatars(plan, abortCtl); // 头像：主账号 + 关联渠道各账号（已存在跳过）；abort 透传（任务中断不再下头像）
     const byPost = await collectPostFiles(plan);
     const summary = [];
     // 基于磁盘全部帖 html（不是 plan.posts——部分运行如 --length N 时 plan.posts 只是子集，避免覆盖丢失全量记录）
@@ -1511,16 +1618,24 @@ async function downloadRevision(revision, postDir, hashIndex, { concurrency = 1,
       if (idx >= todo.length) return;
       const job = todo[idx];
       emit({ type: 'job.queued', data: { creator: (job.post && job.post.creatorName) || '', filename: job.filename } }); // 文件 job 入队（对齐原版 job_queued——queued_files 累计）
+      emit({ type: 'download.started', data: { filename: job.filename, creator: (job.post && job.post.creatorName) || '' } }); // 事件类型对齐（原版 download.* 契约——前端 transfers 视图消费）
+      let retryCount = 0; // download.retrying 重试计数（downloadFile 重试时累加）
       const r = await downloadWithDedup(job, hashIndex, inFlight, {
+        abortCtl: opts.abortCtl || null, // 任务 abort 级联（2026-09-29——真中断）
         onProgress: p => {
           tracker.onProgress({ ...p, savePath: job.savePath });
-          emit({ type: 'job.progress', data: { filename: job.filename, percent: p.percent ?? null, size: p.size ?? null, speed: p.speed ?? null } });
+          emit({ type: 'job.progress', data: { filename: job.filename, percent: p.percent ?? null, size: p.size ?? null, speed: p.speed ?? null, totalSize: p.total ?? null, creator: (job.post && job.post.creatorName) || '' } });
+          if (String(p.state).startsWith('retry:')) { // 下载重试状态——映射 download.retrying（前端事件模板消费）
+            emit({ type: 'download.retrying', data: { filename: job.filename, retry_count: ++retryCount } });
+          }
         },
       });
       const status = ['downloaded', 'downloaded_thumb', 'linked', 'copied'].includes(r.status) ? 'downloaded'
-        : ['exists', 'record_mismatch', 'thumb_exists'].includes(r.status) ? 'existed' : 'failed';
+        : ['exists', 'record_mismatch', 'thumb_exists'].includes(r.status) ? 'existed'
+        : r.status === 'failed:aborted' ? 'aborted' : 'failed'; // abort 不标 failed（对齐原版 CancelledError——不虚高 failed_files）
       tracker.onFinish(job.savePath, status);
       emit({ type: `job.${status}`, data: { filename: job.filename, size: r.size ?? null } });
+      emit({ type: 'download.finished', data: { filename: job.filename, outcome: status, status, size: r.size ?? null } }); // 事件类型对齐（download.finished outcome/status——前端事件消息模板）
       if (!tty) console.log(`  [修订${status === 'downloaded' ? '下载' : status === 'existed' ? '已存在' : '失败'}] ${job.filename}`);
     }
   });
@@ -1541,7 +1656,7 @@ async function downloadRevision(revision, postDir, hashIndex, { concurrency = 1,
  * @param shared 下载上下文（downloadAuthor 传入复用；null = 独立单帖调用）
  */
 async function downloadOnePost(listPost, meta, targetPath, opts = {}, shared = null, postIndex = 0) {
-  const { dryrun, probe, concurrency, inPostConcurrency } = opts;
+  const { dryrun, probe, concurrency, inPostConcurrency, abortCtl } = opts;
   const emit = opts.onEvent || (() => {}); // 可选事件回调（core 事件化；纯附加不影响下载逻辑）
   const ctx = shared || await initDownloadCtx([listPost], meta, targetPath);
   const { plan, hashIndex, tty, sw, allChecked } = ctx;
@@ -1634,17 +1749,25 @@ async function downloadOnePost(listPost, meta, targetPath, opts = {}, shared = n
       if (idx >= todoJobs.length) return;
       const job = todoJobs[idx];
       emit({ type: 'job.queued', data: { creator: '', filename: job.filename } }); // 修订文件入队（对齐原版 job_queued）
+      emit({ type: 'download.started', data: { filename: job.filename, creator: '' } }); // 事件类型对齐（download.* 契约）
+      let retryCount = 0;
       const r = await downloadWithDedup(job, hashIndex, inFlight, {
+        abortCtl: opts.abortCtl || null, // 任务 abort 级联（2026-09-29——真中断）
         onProgress: p => {
           tracker.onProgress({ ...p, savePath: job.savePath });
-          emit({ type: 'job.progress', data: { filename: job.filename, percent: p.percent ?? null, size: p.size ?? null, speed: p.speed ?? null } });
+          emit({ type: 'job.progress', data: { filename: job.filename, percent: p.percent ?? null, size: p.size ?? null, speed: p.speed ?? null, totalSize: p.total ?? null, creator: (job.post && job.post.creatorName) || '' } });
+          if (String(p.state).startsWith('retry:')) {
+            emit({ type: 'download.retrying', data: { filename: job.filename, retry_count: ++retryCount } });
+          }
         },
       });
       // downloaded/downloaded_thumb/linked/copied 都算完成（linked/copied=0 下载硬链接/复制复用；downloaded_thumb=缩略图回退新下载；thumb_exists=缩略图已存在→计入已存在跳过）
       const status = ['downloaded', 'downloaded_thumb', 'linked', 'copied'].includes(r.status) ? 'downloaded'
-        : ['exists', 'record_mismatch', 'thumb_exists'].includes(r.status) ? 'existed' : 'failed';
+        : ['exists', 'record_mismatch', 'thumb_exists'].includes(r.status) ? 'existed'
+        : r.status === 'failed:aborted' ? 'aborted' : 'failed'; // abort 不标 failed（对齐原版 CancelledError——不虚高 failed_files）
       tracker.onFinish(job.savePath, status);
       emit({ type: `job.${status}`, data: { filename: job.filename, size: r.size ?? null } });
+      emit({ type: 'download.finished', data: { filename: job.filename, outcome: status, status, size: r.size ?? null } });
       // 日志带文件大小（反爬 376B 占位一目了然）
       log(`[下载] ${r.status} ${job.filename}${r.size != null ? ` ${fmtBytes(r.size)}` : ''}`);
       if (!tty) { // 非 TTY（管道/重定向/NO_COLOR）：逐行状态输出
@@ -1673,7 +1796,7 @@ async function downloadOnePost(listPost, meta, targetPath, opts = {}, shared = n
   await writeOnePostIndex(detail, checked, plan.creatorName, targetPath);
   allChecked.push(...checked);
   // ⑥ 每帖下载完即刷新创作者级总览 html（含全跳过帖；并发完成由串行写锁逐个刷新，中断后可看实时进度）
-  await writeCreatorIndex(plan, targetPath);
+  await writeCreatorIndex(plan, targetPath, abortCtl);
   // ⑥.5 修订版本下载（PAWCHIVE_INCLUDE_REVISIONS=1 时——参考原版 include_revisions：每修订版下到 帖目录/revisions/<revision_id>/）
   if (CONFIG.includeRevisions) {
     const revisions = await fetchPostRevisions(meta.service, meta.userId, detail.id || listPost.id);
@@ -1693,7 +1816,7 @@ async function downloadOnePost(listPost, meta, targetPath, opts = {}, shared = n
  * 最后写创作者级总览索引并汇总。
  */
 async function downloadAuthor(posts, meta, targetPath, opts = {}) {
-  const { dryrun, probe, postInterval, concurrency } = opts;
+  const { dryrun, probe, concurrency } = opts;
   const emit = opts.onEvent || (() => {}); // 可选事件回调（core 事件化；纯附加）
   const mode = probe ? 'PROBE' : (dryrun ? 'DRYRUN' : 'DOWNLOAD');
   const ctx = await initDownloadCtx(posts, meta, targetPath);
@@ -1722,8 +1845,7 @@ async function downloadAuthor(posts, meta, targetPath, opts = {}) {
   } catch { /* 无创作者级 html（首次）→ 全量处理 */ }
 
   // 并行下载（worker 池式）：同时最多 concurrency 个帖子在处理（每帖内文件串行），
-  // 全局下载并发 = concurrency（等价 KToolBox DownloadWorkerPool：N 个 worker 各下各的文件）；
-  // 帖启动保持 postInterval 间隔（防 getPost 并发触发 API 限流）
+  // 全局下载并发 = concurrency（等价 KToolBox DownloadWorkerPool：N 个 worker 各下各文件）
   const slotCount = Math.max(1, Math.min(Number(concurrency) || 1, posts.length));
   const active = new Set(); // 处理中的帖子 promise（槽位）
   for (let i = 0; i < posts.length; i++) {
@@ -1733,14 +1855,9 @@ async function downloadAuthor(posts, meta, targetPath, opts = {}) {
       emit({ type: 'post.skipped', data: { postId: posts[i].id, title: posts[i].title || '' } });
       continue; // 快速跳过：不占槽位、不等待
     }
-    // 并发维持：槽位满 → 等任一完成【立即补位】（不额外 sleep，保持并发数恒满）；
-    // 槽位未满（下载快于启动）→ 帖启动间隔节流 getPost 解析（防 API 连发）
+    // 并发维持：槽位满 → 等任一完成【立即补位】（不额外 sleep，保持并发数恒满）
     if (active.size >= slotCount) {
       await Promise.race([...active].map(p => p.catch(() => null)));
-    } else if (i > 0) {
-      log(`[下载] 帖启动间隔 ${postInterval}s`);
-      if (!tty) console.log(`  [等待] ${postInterval}s 后启动下一个帖子...`);
-      await sleep(postInterval * 1000);
     }
     const p = downloadOnePost(posts[i], meta, targetPath, { ...opts, inPostConcurrency: 1 }, ctx, i)
       .catch(err => {
@@ -1783,7 +1900,7 @@ async function finishDownload(ctx, meta, posts, targetPath, opts) {
 
   // 创作者级总览索引（帖子级 pawchive-index.html 已在每帖下载前写入、下载后刷新；此处只写创作者总览）
   plan.files = allChecked; // collectPostFiles 依赖 plan.files（job 含 post/postDir/savePath）
-  await writeCreatorIndex(plan, targetPath);
+  await writeCreatorIndex(plan, targetPath, opts.abortCtl);
   console.log(`[DOWNLOAD] 索引已写: ${path.join(plan.creatorDir, CONFIG.indexFilename)}（每帖 ${CONFIG.indexFilename} 下载前生成/完成后刷新）`);
 
   const dlCostSec = ((Date.now() - dlStartMs) / 1000).toFixed(0);
@@ -1796,7 +1913,7 @@ async function finishDownload(ctx, meta, posts, targetPath, opts) {
 // ---------- 主流程 ----------
 async function main() { // dsh-skip-func-length（主流程编排，含计划/下载/索引/汇总，拆分收益低）
   const args = process.argv.slice(2);
-  const flags = { dryrun: false, probe: false, offset: 0, length: undefined, concurrency: Number(process.env.PAWCHIVE_CONCURRENCY) || 1, index: null, postInterval: CONFIG.postIntervalDefault };
+  const flags = { dryrun: false, probe: false, offset: 0, length: undefined, concurrency: Number(process.env.PAWCHIVE_CONCURRENCY) || 1, index: null };
   const positional = [];
   let positionalOnly = false; // 遇 -- 后所有参数按位置参数处理（路径可含 - 开头）
   for (let i = 0; i < args.length; i++) {
@@ -1808,17 +1925,20 @@ async function main() { // dsh-skip-func-length（主流程编排，含计划/�
     else if (a === '--offset') flags.offset = parseInt(args[++i], 10) || 0;
     else if (a === '--length') flags.length = parseInt(args[++i], 10);
     else if (a === '--concurrency') flags.concurrency = Math.max(1, parseInt(args[++i], 10) || 1);
-    else if (a === '--post-interval') flags.postInterval = Math.max(0, parseInt(args[++i], 10) || 0);
+    
     else if (a === '--index') flags.index = args[++i];
     else if (a.startsWith('-')) { console.error(`未知参数: ${a}`); process.exit(2); }
     else positional.push(a);
   }
-  if (flags.index ? positional.length < 1 : positional.length < 2) {
-    console.error('用法: node cli.js <url> <path> [--dryrun] [--probe] [--offset N] [--length N] [--concurrency N] [--index <索引文件>]');
-    process.exit(2);
+  // 2026-09-29：只给 URL 不给 path 时 → 用 .env 的 PAWCHIVE_DATA_ROOT 作下载地址（CONFIG.dataRoot）；两者皆无才报用法
+  if (flags.index) {
+    if (positional.length < 1) { console.error('用法: node cli.js --index <索引文件> [path]'); process.exit(2); }
+  } else if (positional.length < 1) {
+    console.error('用法: node cli.js <url> [path] [--dryrun] [--probe] [--offset N] [--length N] [--concurrency N] [--index <索引文件>]'); process.exit(2);
   }
   const url = flags.index ? null : positional[0];
-  const targetPath = flags.index ? positional[0] : positional[1];
+  const targetPath = flags.index ? (positional[1] || CONFIG.dataRoot || '') : (positional[1] || CONFIG.dataRoot || '');
+  if (!targetPath) { console.error('缺少下载路径：请在参数传入 path，或 .env 配置 PAWCHIVE_DATA_ROOT'); process.exit(2); }
   const mode = flags.probe ? 'PROBE' : (flags.dryrun ? 'DRYRUN' : 'DOWNLOAD');
 
   console.log(`[${mode}] ${flags.index ? `索引输入: ${flags.index}` : `URL: ${url}`}`);
@@ -1842,7 +1962,7 @@ async function main() { // dsh-skip-func-length（主流程编排，含计划/�
     posts = fetched.posts;
     meta = fetched.meta;
   }
-  const dlOpts = { dryrun: flags.dryrun, probe: flags.probe, concurrency: flags.concurrency, postInterval: flags.postInterval };
+  const dlOpts = { dryrun: flags.dryrun, probe: flags.probe, concurrency: flags.concurrency };
   // 统一走 downloadAuthor（单帖 = 1 帖的作者流程）：共享 finishDownload 收尾——完成统计/创作者级索引；
   // 单帖模式此前直调 downloadOnePost 会跳过收尾（无 [DOWNLOAD] 完成统计）
   const result = await downloadAuthor(posts, meta, targetPath, dlOpts);

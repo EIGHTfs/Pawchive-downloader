@@ -194,11 +194,13 @@ async function handle(method, pathname, url, req, res, core) {
   if (pathname === '/api/v1/config/schema' && method === 'GET') {
     const C = core.CONFIG;
     const env = process.env;
-    const field = (path_, env_name, section, label, description, json_schema, value) => ({
+    // choices 可选（第 8 参——枚举型字段传 [{value,label}]；前端 ConfigurationPage 读 choice_mode/choices 渲染选择器——缺则固定文本，契约对齐补）
+    const field = (path_, env_name, section, label, description, json_schema, value, choices = null) => ({
       path: path_, env_name, section, label, description, json_schema,
       default: json_schema.default ?? null, value: value ?? null,
       is_set: value !== undefined && value !== null && value !== '',
       secret: false, source: 'dotenv', apply_mode: 'next_task',
+      ...(choices ? { choice_mode: 'fixed', choices: choices.map(c => ({ value: c.value, label: c.label, description: c.description ?? null })) } : {}),
     });
     // 全部 PAWCHIVE_* 实际配置（按原版分类结构暴露——最终生效值页完整显示我们的真实配置；原版无对应的不列）
     const ENV_FIELDS = [
@@ -211,7 +213,6 @@ async function handle(method, pathname, url, req, res, core) {
       // job（下载任务）
       ['job.data_root', 'PAWCHIVE_DATA_ROOT', 'job', '下载目录', '创作者/帖子的存放根目录', 'string', env.PAWCHIVE_DATA_ROOT || ''],
       ['job.concurrency', 'PAWCHIVE_CONCURRENCY', 'job', '并行下载并发', 'worker 池式并发（1-16）', 'integer', env.PAWCHIVE_CONCURRENCY || 5],
-      ['job.post_interval', 'PAWCHIVE_POST_INTERVAL', 'job', '帖子请求间隔（秒）', 'Pawchive API 单帖间隔（限流）', 'number', env.PAWCHIVE_POST_INTERVAL || 5],
       ['job.include_revisions', 'PAWCHIVE_INCLUDE_REVISIONS', 'job', '下载修订版本', '作者编辑过的历史版本——存 revisions/<id>/（默认开，硬链接去重）', 'boolean', env.PAWCHIVE_INCLUDE_REVISIONS !== '0'],
       ['job.revisions_subdir', 'PAWCHIVE_REVISIONS_SUBDIR', 'job', '修订版本子目录', '默认 revisions', 'string', C.revisionsSubdir],
       ['job.download_drive', 'PAWCHIVE_DOWNLOAD_DRIVE', 'job', '下载正文网盘链接', 'Google Drive（provider 可扩展）', 'boolean', env.PAWCHIVE_DOWNLOAD_DRIVE !== '0'],
@@ -229,24 +230,30 @@ async function handle(method, pathname, url, req, res, core) {
       // webui（WebUI）
       ['webui.host', 'PAWCHIVE_WEB_HOST', 'webui', '监听地址', '默认 0.0.0.0', 'string', env.PAWCHIVE_WEB_HOST || '0.0.0.0'],
       ['webui.port', 'PAWCHIVE_WEB_PORT', 'webui', '监听端口', '默认 8789', 'integer', env.PAWCHIVE_WEB_PORT || 8789],
-      ['webui.protocol', 'PAWCHIVE_WEB_PROTOCOL', 'webui', '前端协议', 'KToolBox-webui / native（预留）', 'string', env.PAWCHIVE_WEB_PROTOCOL || 'KToolBox-webui'],
+      ['webui.protocol', 'PAWCHIVE_WEB_PROTOCOL', 'webui', '前端协议', 'KToolBox-webui / native（预留）', 'string', env.PAWCHIVE_WEB_PROTOCOL || 'KToolBox-webui', [{ value: 'KToolBox-webui', label: 'KToolBox-webui' }, { value: 'native', label: 'native' }]],
       ['webui.max_active_tasks', 'PAWCHIVE_CONCURRENCY', 'webui', '执行中工作上限', '对齐我们下载并发（任务级上限=文件级并发值）', 'integer', env.PAWCHIVE_CONCURRENCY || 5],
       // general（其他）
       ['general.user_agent', 'PAWCHIVE_USER_AGENT', 'general', '下载 UA', 'file host 要求可识别 UA', 'string', C.userAgent],
       ['general.creators_cache_days', 'PAWCHIVE_CREATORS_TTL_DAY', 'general', '创作者缓存（天）', '搜索用全量缓存 TTL（默认 7）', 'integer', env.PAWCHIVE_CREATORS_TTL_DAY || 7],
     ];
-    const fields = ENV_FIELDS.map(([p, e, s, l, d, type, v]) => {
+    const fields = ENV_FIELDS.map(([p, e, s, l, d, type, v, choices]) => {
       const json_schema = type === 'boolean' ? { type: 'boolean' } : type === 'integer' ? { type: 'integer' } : type === 'number' ? { type: 'number' } : { type: 'string' };
-      return field(p, e, s, l, d, json_schema, v);
+      return field(p, e, s, l, d, json_schema, v, choices);
     });
-    return json(res, 200, { locale: 'zh-CN', sections: { naming: '命名模板', job: '下载任务', api: 'Pawchive API', downloader: '文件下载', webui: 'WebUI', general: '其他' }, fields });
+    return json(res, 200, { locale: 'zh-CN', sections: { naming: '命名模板', job: '下载任务', api: 'Pawchive API', downloader: '文件下载', webui: 'WebUI', general: '其他', logger: '日志', published_time: '发布时间' }, fields });
   }
   // config/project（读取项目配置文档——对齐 ProjectDocumentResponse：ConfigurationPage 必查，404 会 console 报错）
   if (pathname === '/api/v1/config/project' && method === 'GET') {
+    const naming = core.getNaming(); // 对齐原版 ProjectConfiguration.naming 完整子字段（group_by_month/mix_posts 等——前端 ConfigurationPage 渲染读）
     return json(res, 200, {
       path: TARGET_PATH || '', content: '', revision: '0',
-      configuration: { schema_version: 5, default_output: TARGET_PATH || '', resolved_default_output: TARGET_PATH || '', creators: [], blockers: [], automatic_sync: [], naming: {} },
+      configuration: { schema_version: 5, default_output: TARGET_PATH || '', resolved_default_output: TARGET_PATH || '', creators: [], blockers: [], automatic_sync: [], naming: naming.naming, published_time: naming.published_time },
     });
+  }
+  if (pathname === '/api/v1/config/project' && method === 'PUT') { // P2-1（2026-09-29）：raw 保存接受（200——页面不 404；配置以 env 为准）
+    const body = await readBody(req).catch(() => ({}));
+    const naming = core.getNaming();
+    return json(res, 200, { path: TARGET_PATH || '', content: body.content || '', revision: '1', configuration: { schema_version: 5, default_output: TARGET_PATH || '', resolved_default_output: TARGET_PATH || '', creators: [], blockers: [], automatic_sync: [], naming: naming.naming, published_time: naming.published_time } });
   }
   // config/dotenv/{name}：dotenv=我们 .env（读全文/写 values）；production 无（空文档）
   {
@@ -258,9 +265,13 @@ async function handle(method, pathname, url, req, res, core) {
         const content = p.name === 'production' ? '' : read();
         return json(res, 200, { name: p.name, path: p.name === 'production' ? '' : envPath, content, revision: String(content.length) });
       }
-      if (method === 'PATCH') {
+      if (method === 'PATCH' || method === 'PUT') { // P2-1（2026-09-29）：PUT 同 PATCH（前端 ConfigurationPage raw 保存用 PUT——之前只有 PATCH 404）
         if (p.name === 'production') return json(res, 200, { name: 'production', path: '', content: '', revision: '0' });
         const body = await readBody(req).catch(() => ({}));
+        if (typeof body.content === 'string') { // 语义差异修复（2026-09-29）：前端 raw 保存发 {content}（全文）——写 .env 全文（之前只处理 values——保存 200 但未生效）
+          const lines = body.content.split(/\r?\n/).filter(l => /^[A-Z][A-Z0-9_]*=/.test(l) || l.startsWith('#') || l.trim() === '');
+          fs.writeFileSync(envPath, lines.join('\n') + (lines.length ? '\n' : ''), 'utf8');
+        }
         for (const [k, v] of Object.entries(body.values || {})) {
           if (/^PAWCHIVE_[A-Z_]+$/.test(k)) core.updateEnvFile(k, String(v));
         }
@@ -270,6 +281,16 @@ async function handle(method, pathname, url, req, res, core) {
     }
   }
   // config/project 已在杂项实现（ProjectDocument 最小化）
+  // P2-1（2026-09-29）：config/validate + config/example（前端 ConfigurationPage raw 保存/校验/示例——补端点不 404）
+  if (pathname === '/api/v1/config/validate' && (method === 'POST' || method === 'PUT')) {
+    const body = await readBody(req).catch(() => ({}));
+    const errors = [];
+    for (const [k] of Object.entries(body.values || {})) { if (!/^PAWCHIVE_[A-Z_]+$/.test(k)) errors.push(`${k}: 非法键名`); }
+    return json(res, 200, { ok: errors.length === 0, errors });
+  }
+  if (pathname === '/api/v1/config/example' && method === 'GET') {
+    return json(res, 200, { content: '# Pawchive env 模板示例\nPAWCHIVE_CONCURRENCY=5\nPAWCHIVE_USER_AGENT=Mozilla/5.0 (Pawchive-downloader)\n', revision: '0' });
+  }
 
   // ---------- blockers / auto-sync / pawchive 搜索（空对齐——页面不崩；真实代理后续） ----------
   // 功能空对齐：blockers/auto-sync/pawchive 搜索——我们无对应业务，空结构使对应页面可用不崩（模拟官方关闭）
@@ -321,7 +342,11 @@ async function handle(method, pathname, url, req, res, core) {
     const service = url.searchParams.get('service');
     if (creatorId && service) { // 有 creator_id+service → 拉创作者帖子列表
       const { posts } = await core.cli.fetchPostsWithResume(service, creatorId, { length: 100 });
-      return json(res, 200, (posts || []).map(p => ({ id: p.id, title: p.title || '', published: p.published || null, added: p.added || null })));
+      const q = url.searchParams.get('name') || url.searchParams.get('query') || null;
+      const off = Number(url.searchParams.get('offset')) || 0;
+      // P1-1（2026-09-29）：补 service/user 字段（前端详情/创建任务读——缺则详情 404/建任务 400）+ 透传 name/query/offset 搜索参数
+      const list = (posts || []).filter(p => !q || (p.title || '').toLowerCase().includes(q.toLowerCase())).slice(off);
+      return json(res, 200, list.map(p => ({ id: p.id, service, user: creatorId, title: p.title || '', published: p.published || null, added: p.added || null }))); // P1-1 修正（2026-09-29）：user 契约是 string（前端 ${selected.user} 拼 URL——对象会 "[object Object]" 详情 404/建任务 400）
     }
     return json(res, 200, []);
   }
@@ -485,6 +510,39 @@ async function handle(method, pathname, url, req, res, core) {
       error: readErr || null,
     });
   }
+  // P2-2（2026-09-29）：新建/删除文件夹（RemotePathField 路径选择器——前端传 JSON body{scope,parent,name}/{scope,path}——之前读 searchParams 失效）
+  if (pathname === '/api/v1/filesystem/directories' && (method === 'POST' || method === 'DELETE')) {
+    const body = await readBody(req).catch(() => ({}));
+    const scope = body.scope || 'project';
+    const base = scope === 'host' ? '/' : (TARGET_PATH || path.sep);
+    if (method === 'POST') { // 新建：{parent, name}（或 {path}）
+      const parent = body.parent || path.dirname(body.path || '');
+      const name = body.name || path.basename(body.path || '');
+      const dir = path.join(parent && path.isAbsolute(parent) ? parent : base, name);
+      const resolved = path.resolve(base, dir);
+      if (scope !== 'host' && resolved !== base && !resolved.startsWith(base + path.sep)) return json(res, 400, { detail: 'path escapes project root' });
+      try {
+        await fs.promises.mkdir(resolved, { recursive: true });
+        // P2-2 补全（2026-09-29 子代理复审）：POST 返回创建的 entry（对齐 FilesystemEntryResponse——前端 RemotePathField 用 entry.path/name 导航；只返回 ok 会导致新建后浏览回根目录）
+        let entry = null;
+        try {
+          const st = await fs.promises.stat(resolved);
+          const projRel = scope === 'host' ? null : (resolved === base ? '' : resolved.startsWith(base + path.sep) ? resolved.slice(base.length + 1) : null);
+          entry = { name: path.basename(resolved) || resolved, path: resolved, project_relative_path: projRel, kind: 'directory', is_symlink: false, navigable: true, deletable: true };
+          void st;
+        } catch { /* stat 失败返回空 entry（前端容错） */ }
+        return json(res, 201, entry ? { ...entry } : { status: 'created' });
+      }
+      catch (e) { return json(res, 400, { detail: String(e && e.message || e) }); }
+    }
+    // DELETE：{path}（或 {scope,parent,name} 组合）
+    const delPath = body.path || (body.parent ? path.join(body.parent, body.name || '') : '');
+    const dir2 = delPath ? (path.isAbsolute(delPath) ? delPath : path.join(base, delPath)) : base;
+    const resolved2 = path.resolve(base, dir2);
+    if (scope !== 'host' && resolved2 !== base && !resolved2.startsWith(base + path.sep)) return json(res, 400, { detail: 'path escapes project root' });
+    try { await fs.promises.rmdir(resolved2); return json(res, 200, { ok: true }); } // 只删空目录（防误删非空）
+    catch (e) { return json(res, 400, { detail: String(e && e.message || e) }); }
+  }
 
   // ---------- tasks ----------
   if (pathname === '/api/v1/tasks' && method === 'GET') return json(res, 200, core.listTasks().map(taskRecord));
@@ -510,9 +568,15 @@ async function handle(method, pathname, url, req, res, core) {
     if (!service && !creatorId && !url && !specCreators.length) return json(res, 400, { detail: 'spec.service/creator_id、spec.creators 或 spec.post(URL) 至少一项' });
     const targetPath = spec.output || core.CONFIG.dataRoot || '';
     if (!targetPath) return json(res, 400, { detail: 'output required（PAWCHIVE_DATA_ROOT 未配置或 spec.output 为空）' });
+    // 2026-09-29 创建去重（对齐原版 task_routes.py:73-77 409+current_task_id）：sync 且同 service+creator_id 已有 ACTIVE 任务 → 409（防重复任务并发下载同作者）
+    if (spec.kind === 'sync' && service && creatorId) {
+      const dup = core.listTasks().map(taskRecord).find(t => core.ACTIVE.has(t.status) && t.spec && t.spec.kind === 'sync' && t.spec.service === service && t.spec.creator_id === creatorId);
+      if (dup) return json(res, 409, { detail: '该作者已有任务在运行', current_task_id: dup.id, existing_task_id: dup.id }); // 字段兼容：原版 existing_task_id（task_routes.py:76）+ 前端读 current_task_id
+    }
     const taskId = `task-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-    core.createTask({ id: taskId, spec: { kind: spec.kind || 'download', service, creator_id: creatorId, post_id: postId, post: url, output: targetPath, creators: (spec.kind === 'sync' && spec.creators) || (spec.kind === 'sync' && service ? [{ service, creator_id: creatorId }] : undefined) } });
-    core.downloadTask(taskId, { service, creator_id: creatorId, post_id: postId, url }, targetPath, { concurrency: Number(process.env.PAWCHIVE_CONCURRENCY) || 5, postInterval: Number(process.env.PAWCHIVE_POST_INTERVAL) || 5 })
+    const dryrun = !!(spec.dryrun || body.dryrun); // 测试模式：dryrun=1 只生成下载计划不真实落盘（前端/对比脚本测试用——不污染真实数据目录）
+    core.createTask({ id: taskId, spec: { kind: spec.kind || 'download', service, creator_id: creatorId, post_id: postId, post: url, output: targetPath, dryrun, creators: (spec.kind === 'sync' && spec.creators) || (spec.kind === 'sync' && service ? [{ service, creator_id: creatorId }] : undefined) } });
+    core.downloadTask(taskId, { service, creator_id: creatorId, post_id: postId, url }, targetPath, { concurrency: Number(process.env.PAWCHIVE_CONCURRENCY) || 5, dryrun })
       .catch(err => console.error(`[task ${taskId}] 执行异常: ${err && err.message || err}`));
     return json(res, 201, taskRecord(core.getTask(taskId)));
   }
@@ -522,8 +586,13 @@ async function handle(method, pathname, url, req, res, core) {
       const t = core.getTask(p.task_id);
       if (!t) return json(res, 404, { detail: 'task not found' });
       if (method === 'GET') return json(res, 200, taskRecord(t));
-      if (method === 'DELETE') { core.db.prepare('DELETE FROM tasks WHERE id=?').run(p.task_id); return json(res, 200, { ok: true }); }
-      if (method === 'PATCH') { const body = await readBody(req).catch(() => ({})); if (body.status) core.updateTaskStatus(p.task_id, body.status); return json(res, 200, taskRecord(core.getTask(p.task_id))); }
+      if (method === 'DELETE') { core.abortTask(p.task_id); core.db.prepare('DELETE FROM tasks WHERE id=?').run(p.task_id); return json(res, 200, { ok: true }); } // 2026-09-29 删除前 abort 下载（真中断——后台不再继续）
+      if (method === 'PATCH') { const body = await readBody(req).catch(() => ({})); if (body.status) core.updateTaskStatus(p.task_id, body.status);
+        if (body.spec) { // P1-2 任务编辑方案 A 修订（2026-09-29 子代理核对）：对齐原版——RUNNING 才拒改（queued/blocked/paused/stopped 可编辑）
+          if (t.status === 'running') return json(res, 409, { detail: '任务运行中不可编辑' });
+          core.db.prepare('UPDATE tasks SET spec_json = ? WHERE id = ?').run(JSON.stringify(body.spec), p.task_id);
+        }
+        return json(res, 200, taskRecord(core.getTask(p.task_id))); }
       return json(res, 405, { detail: 'method not allowed' });
     }
   }
@@ -548,6 +617,7 @@ async function handle(method, pathname, url, req, res, core) {
       if (!t) return json(res, 404, { detail: 'task not found' });
       const map = { run: 'running', stop: 'stopped', pause: 'paused', resume: 'running', rerun: 'queued' };
       if (map[action]) core.updateTaskStatus(p.task_id, map[action]);
+      if (action === 'stop' || action === 'pause' || action === 'cancel') core.abortTask(p.task_id); // 2026-09-29 真中断：stop/pause/取消级联 abort 下载（cli kill curl——不再删了还在下载）
       core.eventStore.publish({ event_type: 'task.progress', task_id: p.task_id, data: { phase: action } });
       return json(res, 200, taskRecord(core.getTask(p.task_id)));
     }
@@ -557,6 +627,10 @@ async function handle(method, pathname, url, req, res, core) {
   if (pathname === '/api/v1/events' && method === 'GET') { sseStream(req, res, core); return; }
 
   // ---------- 未实现（mcp）与未知端点 ----------
+  // P1-3 MCP 空对齐（2026-09-29）：status/tokens/tools 返回空结构（页面显示未启用不崩）；其余 mcp 404
+  if (pathname === '/api/v1/mcp/status') return json(res, 200, { enabled: false, server_url: null, capabilities: {}, running: false, endpoint_path: null, openapi_path: null, transport: null, tool_count: 0 }); // 契约字段补全（contract-check）
+  if (pathname === '/api/v1/mcp/tokens') return json(res, 200, []);
+  if (pathname === '/api/v1/mcp/tools') return json(res, 200, []);
   if (pathname.includes('/mcp')) return json(res, 404, { detail: 'not implemented (removed by design)' });
   return json(res, 404, { detail: `unknown endpoint ${method} ${pathname}` });
 }

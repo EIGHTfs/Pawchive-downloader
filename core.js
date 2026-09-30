@@ -164,6 +164,15 @@ function listTasks({ status = null, limit = 200 } = {}) {
 function updateTaskStatus(id, status, { error = null, failure_json = null } = {}) {
   db.prepare('UPDATE tasks SET status=?, error=?, failure_json=?, updated_at=? WHERE id=?')
     .run(status, error, failure_json, nowIso(), id);
+  // P2-5 补全（2026-09-29）：发布 task.status 事件——前端 realtime.tsx 读 event.data.progress（实时进度）+ event.data.status（状态翻转），
+  // 与 task.progress（阶段详情）并行不冲突；内嵌当前 progress 快照（对齐原版 task_store.py:236-245 task.status 内嵌 progress）
+  const row = db.prepare('SELECT * FROM tasks WHERE id=?').get(id);
+  if (row) {
+    let progress = {};
+    try { progress = JSON.parse(row.progress_json || '{}'); } catch { /* 容错 */ }
+    const data = { status, progress, ...(error ? { error } : {}) };
+    eventStore.publish({ event_type: 'task.status', task_id: id, data });
+  }
   return getTask(id);
 }
 function _toTask(row) {
@@ -244,23 +253,33 @@ function listCreators(targetPath) {
 const eventStore = new EventStore();
 
 // ---------- 下载执行（内嵌 cli；onEvent → SQLite 事件 + TaskProgress 聚合，对齐原作者） ----------
-/** 聚合 cli 事件 → TaskProgress（原作者字段：queued/processed/completed/existing/failed_files + bytes/speed） */
+/** 聚合 cli 事件 → TaskProgress（原作者字段：queued/processed/completed/existing/failed_files + bytes/speed；2026-09-29 对齐：transferred 累计、speed 总速度、total/eta、active 完成清理） */
 function progressReducer() {
   const p = { queued_files: 0, processed_files: 0, completed_files: 0, existing_files: 0, failed_files: 0, transferred_bytes: 0, total_bytes: null, speed_bps: 0, eta_seconds: null, active_creators: [], active_downloads: {}, waiting_retries: {} };
+  const lastSizes = {}; // 每文件上次 size（transferred 增量累计基准——多文件并发不重复计数）
+  const jobTotals = {}; // 每文件 totalSize（total_bytes 累计和——对齐原版 task_reporter total 累计——非 Math.max 单文件）
+  const recompute = () => { // 重算总速度（活跃 job speed 之和）+ eta（(total-transferred)/speed）
+    p.speed_bps = Object.values(p.active_downloads).reduce((s, a) => s + (typeof a.speed === 'number' ? a.speed : 0), 0);
+    p.eta_seconds = (typeof p.total_bytes === 'number' && p.speed_bps > 0) ? Math.max(0, (p.total_bytes - p.transferred_bytes) / p.speed_bps) : null;
+  };
   return {
     current: () => ({ ...p }),
     apply(ev) {
       const d = ev.data || {};
       switch (ev.type) {
-        case 'job.progress':
-          if (typeof d.size === 'number') p.transferred_bytes = Math.max(p.transferred_bytes, d.size);
-          if (typeof d.speed === 'number') p.speed_bps = d.speed;
-          if (typeof d.percent === 'number') p.active_downloads[d.filename || ''] = { filename: d.filename, percent: d.percent, speed: d.speed, size: d.size };
+        case 'job.progress': {
+          const fn = d.filename || '';
+          if (typeof d.size === 'number') { p.transferred_bytes += Math.max(0, d.size - (lastSizes[fn] || 0)); lastSizes[fn] = d.size; } // 增量累计（非 Math.max 单值）
+          if (typeof d.totalSize === 'number') { jobTotals[fn] = d.totalSize; p.total_bytes = Object.values(jobTotals).reduce((s, t) => s + t, 0); } // total 累计和（对齐原版——非 max 单文件）
+          p.active_downloads[fn] = { filename: fn, percent: d.percent, speed: d.speed, size: d.size, totalSize: d.totalSize, creator_key: d.creator || '' };
+          recompute();
           break;
+        }
         case 'job.queued': p.queued_files++; break; // 文件 job 入队（对齐原版 job_queued——累计入队数）
-        case 'job.downloaded': p.completed_files++; p.processed_files++; break;
-        case 'job.existed': p.existing_files++; p.processed_files++; break;
-        case 'job.failed': p.failed_files++; p.processed_files++; break;
+        case 'job.downloaded': p.completed_files++; p.processed_files++; delete lastSizes[d.filename || '']; delete p.active_downloads[d.filename || '']; recompute(); break;
+        case 'job.existed': p.existing_files++; p.processed_files++; delete lastSizes[d.filename || '']; delete p.active_downloads[d.filename || '']; recompute(); break;
+        case 'job.aborted': delete lastSizes[d.filename || '']; delete p.active_downloads[d.filename || '']; recompute(); break; // abort 中断（不计 failed——对齐原版 CancelledError）
+        case 'job.failed': p.failed_files++; p.processed_files++; delete lastSizes[d.filename || '']; delete p.active_downloads[d.filename || '']; recompute(); break;
         case 'post.completed': // 帖级聚合（已存在帖 todoJobs 空时无 job.* 事件，从此兜底）
           p.completed_files += d.downloaded || 0;
           p.existing_files += d.existed || 0;
@@ -272,38 +291,75 @@ function progressReducer() {
   };
 }
 
+/** 任务 abort 注册表（taskId → AbortController——abortTask 触发真中断下载） */
+const taskAborts = new Map();
+
 /** 创建并执行下载任务（内嵌 cli.downloadAuthor；任务状态机 + 事件持久化）。
- * spec: { service, creator_id?, post_id?, postInterval?, concurrency? } 或 { url } */
-async function downloadTask(taskId, spec, targetPath, { postInterval = 5, concurrency = 5, dryrun = false } = {}) {
+ * spec: { service, creator_id?, post_id?, concurrency? } 或 { url } */
+async function downloadTask(taskId, spec, targetPath, { concurrency = 5, dryrun = false } = {}) {
+  const controller = new AbortController(); // 任务级 abort（2026-09-29——stop/pause/删除真中断级联到 cli）
+  taskAborts.set(taskId, controller);
+  const abortCtl = { shouldAbort: () => controller.signal.aborted };
   const url = spec.url || `https://pawchive.pw/${spec.service}/user/${spec.creator_id}${spec.post_id ? `/post/${spec.post_id}` : ''}`;
   const prog = progressReducer();
+  let lastProgressAt = 0; // P2-4（2026-09-29）：job.progress 500ms 刷屏——DB/SSE 事件 1s 节流合并（progress 状态本身每次更新——事件流降频）
   const onEvent = e => {
     prog.apply(e);
-    eventStore.publish({ event_type: e.type, task_id: taskId, data: e.data || {} });
-    if (e.type === 'job.progress' || e.type.startsWith('job.') || e.type.startsWith('task.') || e.type === 'post.completed' || e.type === 'post.skipped') {
-      updateTaskProgress(taskId, prog.current());
+    const isProgressish = e.type === 'job.progress' || e.type.startsWith('job.') || e.type.startsWith('task.') || e.type === 'post.completed' || e.type === 'post.skipped';
+    if (e.type !== 'job.progress' || Date.now() - lastProgressAt > 1000) { // 非 progress 实时；progress 1s 节流（防 500ms 刷屏）
+      eventStore.publish({ event_type: e.type, task_id: taskId, data: { ...(e.data || {}), progress: prog.current() } }); // P2-5：事件内嵌 progress 快照——前端 realtime.tsx:567 读 event.data.progress 实时更新
+      lastProgressAt = Date.now();
     }
+    if (isProgressish) updateTaskProgress(taskId, prog.current());
   };
   updateTaskStatus(taskId, 'running');
-  startAttempt(taskId, 1, spec, { concurrency, postInterval });
-  eventStore.publish({ event_type: 'task.progress', task_id: taskId, data: { phase: 'started' } });
+  startAttempt(taskId, 1, spec, { concurrency });
+  // P2-5（2026-09-29）：task.progress 事件内嵌 progress 快照——前端 realtime.tsx:567 读 event.data.progress 驱动 SSE 实时进度
+  eventStore.publish({ event_type: 'task.progress', task_id: taskId, data: { phase: 'started', progress: prog.current() } });
   try {
     const fetched = await cli.fetchPostsByUrl(url, targetPath); // 拉作者/帖子列表（分页缓存复用——必须传 targetPath：内部 indexFileFor 缓存索引 path.join(targetPath) 缺则 path undefined 崩）
-    const result = await cli.downloadAuthor(fetched.posts, fetched.meta, targetPath, { concurrency, postInterval, dryrun, onEvent });
+    // P2-6（2026-09-29）：fetch 到数据后回填 presentation（任务标题）——前端 TasksPage 读 e.presentation?.title?.trim() 作标题、presentation?.creator_name 作副标题；缺则 show「帖子 #id」/「未知帖子」（对齐原版 TaskPresentationSnapshot created from Pawchive data）
+    try {
+      const metaName = fetched.meta && (fetched.meta.creatorName || fetched.meta.creator_name);
+      const pName = metaName || (spec.service && spec.creator_id ? spec.creator_id : '');
+      const firstPostTitle = fetched.meta && fetched.meta.mode === 'post' && fetched.posts && fetched.posts[0] ? fetched.posts[0].title : null;
+      const pTitle = firstPostTitle || pName || spec.creator_id || spec.post_id || '';
+      if (pName || pTitle) {
+        db.prepare('UPDATE tasks SET presentation_json = ?, updated_at = ? WHERE id = ?')
+          .run(JSON.stringify({ target_key: `${spec.service || ''}/${spec.creator_id || ''}${spec.post_id ? `/post/${spec.post_id}` : ''}`, title: pTitle, creator_name: pName || null }), nowIso(), taskId);
+      }
+    } catch { /* presentation 回填失败不影响下载（任务仍正常执行——非关键路径） */ }
+    const result = await cli.downloadAuthor(fetched.posts, fetched.meta, targetPath, { concurrency, dryrun, onEvent, abortCtl }); // abortCtl 级联（任务 stop/pause/删除真中断）
     const final = prog.current();
     updateTaskProgress(taskId, final);
     finishAttempt(taskId, 1, { result: { downloaded: result.downloaded, existed: result.existed, failed: result.failed } });
-    updateTaskStatus(taskId, result.failed ? 'completed' : 'completed');
-    eventStore.publish({ event_type: 'task.progress', task_id: taskId, data: { phase: 'completed', summary: result } });
+    // 终态不被覆盖（2026-09-29 对齐原版）：用户已 stop/pause → 保持用户状态（不冲掉成 completed）
+    const cur = getTask(taskId);
+    if (cur && (cur.status === 'stopped' || cur.status === 'paused')) {
+      eventStore.publish({ event_type: 'task.progress', task_id: taskId, data: { phase: 'stopped_by_user', summary: result, progress: prog.current() } });
+    } else {
+      updateTaskStatus(taskId, 'completed');
+      eventStore.publish({ event_type: 'task.progress', task_id: taskId, data: { phase: 'completed', summary: result, progress: prog.current() } });
+    }
     return result;
   } catch (err) {
+    if (controller.signal.aborted) { // 任务被 abort（stop/pause/删除）——中断态（不标 failed）
+      finishAttempt(taskId, 1, { status: 'interrupted', error: '任务被中止' });
+      updateTaskStatus(taskId, 'interrupted', { error: '任务被中止（用户操作）' });
+      eventStore.publish({ event_type: 'task.progress', task_id: taskId, data: { phase: 'interrupted', error: '任务被中止', progress: prog.current() } });
+      return null;
+    }
     const msg = String(err && err.message || err);
     finishAttempt(taskId, 1, { status: 'failed', error: msg });
     updateTaskStatus(taskId, 'failed', { error: msg });
-    eventStore.publish({ event_type: 'task.progress', task_id: taskId, data: { phase: 'failed', error: msg } });
+    eventStore.publish({ event_type: 'task.progress', task_id: taskId, data: { phase: 'failed', error: msg, progress: prog.current() } });
     throw err;
+  } finally {
+    taskAborts.delete(taskId); // 结束清理注册
   }
 }
+/** 中止任务下载（stop/pause/删除级联——真中断：abortCtl → cli downloadFile/streamOnce kill curl） */
+function abortTask(taskId) { const c = taskAborts.get(taskId); if (c) c.abort(); }
 
 // ---------- naming（模板映射：env 中枢 readPawchiveEnv → ktool naming 契约——统一读 env，不依赖 cli.CONFIG） ----------
 const envCompat = require('./scripts/KToolBox-env-compat.js'); // env 翻译中枢（兼容层强制读——env 相关全走它）
@@ -320,7 +376,8 @@ function getNaming() {
       mix_posts: false, sequential_filename: true, sequential_filename_excludes: [], group_by_year: false, group_by_month: false,
       year_dirname_format: '{year}', month_dirname_format: '{year}-{month:02d}',
     },
-    published_time: {}, revision: '0',
+    published_time: { mode: 'normalized', target_timezone: 'Asia/Shanghai', fallback_service_timezone: 'UTC', service_timezones: { fanbox: 'Asia/Tokyo', patreon: 'UTC' } }, // 对齐原版 PublishedTimePolicySnapshot（时区策略——前端命名页时区设置读这些字段）
+    revision: '0',
   };
 }
 /** 更新 .env 文件（统一转发 env 中枢 writeEnv——cli 读 .env 即时生效） */
@@ -348,7 +405,9 @@ const planToIntervalMs = s => { const every = Number((s && s.every) || 24) || 24
 function getAutoSyncPlan(id) {
   const r = db.prepare(`SELECT * FROM auto_sync_plans WHERE id = ?`).get(id);
   if (!r) return null;
-  return { id: r.id, name: r.name, enabled: !!r.enabled, creators: JSON.parse(r.creators || '[]'), schedule: JSON.parse(r.schedule || '{}'), next_run_at: r.next_run_at, created_at: r.created_at, updated_at: r.updated_at };
+  const schedule = JSON.parse(r.schedule || '{}');
+  if (!schedule.kind) schedule.kind = 'interval'; // P2-3（2026-09-29）：补 kind:'interval'——前端 normalizePlan 默认按 cron 解析错位（显示「0 3 * * *」而非 interval）
+  return { id: r.id, name: r.name, enabled: !!r.enabled, creators: JSON.parse(r.creators || '[]'), schedule, next_run_at: r.next_run_at, created_at: r.created_at, updated_at: r.updated_at };
 }
 function createAutoSyncPlan({ id, name, enabled = true, creators = [], schedule = {} }) {
   const now = nowIso();
@@ -369,23 +428,26 @@ function updateAutoSyncPlan(id, { enabled, creators, schedule, name } = {}) {
 }
 let autoSyncTimer = null;
 /** 触发计划（立即运行/定时器共用）：每 creator 建一个 sync 任务（自动按作者下载） */
-function triggerAutoSyncPlan(plan, targetPath, { concurrency = 5, postInterval = 5 } = {}) {
+function triggerAutoSyncPlan(plan, targetPath, { concurrency = 5 } = {}) {
   for (const key of (plan && plan.creators) || []) {
     const [service, creator_id] = String(key).split(':');
     if (!service || !creator_id) continue;
+    // 2026-09-29 触发查重（对齐原版 auto_sync 双重查重）：同 creator 已有 ACTIVE sync 任务 → 跳过不重复触发
+    const dupActive = listTasks().some(t => { try { const s = JSON.parse(t.spec || t.spec_json || '{}'); return ACTIVE.has(t.status) && s.kind === 'sync' && s.service === service && s.creator_id === creator_id; } catch { return false; } });
+    if (dupActive) continue;
     const taskId = `as-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
     createTask({ id: taskId, spec: { kind: 'sync', service, creator_id, creators: [{ service, creator_id }], output: targetPath, save_creator_indices: false, offset: 0, keywords: [], keywords_exclude: [] } });
-    downloadTask(taskId, { service, creator_id }, targetPath, { concurrency, postInterval }).catch(err => console.error(`[auto-sync ${taskId}] ${err && err.message || err}`));
+    downloadTask(taskId, { service, creator_id }, targetPath, { concurrency }).catch(err => console.error(`[auto-sync ${taskId}] ${err && err.message || err}`));
   }
 }
 /** 启动自动同步调度（服务启动调一次）：每分钟扫到期计划 → 触发 sync 任务 */
-function startAutoSyncScheduler(targetPath, { concurrency = 5, postInterval = 5 } = {}) {
+function startAutoSyncScheduler(targetPath, { concurrency = 5 } = {}) {
   if (autoSyncTimer) clearInterval(autoSyncTimer);
   const tick = async () => {
     const now = Date.now();
     for (const p of listAutoSyncPlans()) {
       if (!p.enabled || !p.next_run_at || new Date(p.next_run_at).getTime() > now) continue;
-      triggerAutoSyncPlan(p, targetPath, { concurrency, postInterval });
+      triggerAutoSyncPlan(p, targetPath, { concurrency });
       updateAutoSyncPlan(p.id, {});
     }
   };
@@ -393,4 +455,4 @@ function startAutoSyncScheduler(targetPath, { concurrency = 5, postInterval = 5 
   autoSyncTimer = setInterval(tick, 60000);
 }
 
-module.exports = { db, eventStore, EventStore, cli, TASK_STATUS, ACTIVE, TERMINAL, createTask, getTask, listTasks, updateTaskStatus, updateTaskProgress, startAttempt, finishAttempt, listAttempts, listCreators, updateCreatorProfile, getCreatorProfile, deleteCreatorProfile, downloadTask, getNaming, updateEnvFile, searchCreators, createAutoSyncPlan, listAutoSyncPlans, getAutoSyncPlan, deleteAutoSyncPlan, updateAutoSyncPlan, startAutoSyncScheduler, triggerAutoSyncPlan, nowIso, CONFIG: cli.CONFIG };
+module.exports = { db, eventStore, EventStore, cli, TASK_STATUS, ACTIVE, TERMINAL, createTask, getTask, listTasks, updateTaskStatus, updateTaskProgress, startAttempt, finishAttempt, listAttempts, listCreators, updateCreatorProfile, getCreatorProfile, deleteCreatorProfile, downloadTask, getNaming, updateEnvFile, searchCreators, createAutoSyncPlan, listAutoSyncPlans, getAutoSyncPlan, deleteAutoSyncPlan, updateAutoSyncPlan, startAutoSyncScheduler, triggerAutoSyncPlan, abortTask, progressReducer, nowIso, CONFIG: cli.CONFIG };

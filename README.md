@@ -5,13 +5,13 @@
 ## 用法
 
 ```bash
-node cli.js <url> <path> [--dryrun] [--offset N] [--length N] [--concurrency N] [--index <索引文件>]
+node cli.js <url> [path] [--dryrun] [--offset N] [--length N] [--concurrency N] [--index <索引文件>]
 ```
 
 | 参数 | 说明 |
 |------|------|
-| `url` | Pawchive 页面 URL：创作者页 `https://pawchive.pw/{service}/user/{creator_id}`，或单帖页 `https://pawchive.pw/{service}/user/{creator_id}/post/{post_id}`，本 CLI 自动识别下载范围（全量或单帖） |
-| `path` | 下载目标根目录 |
+| `url` | Pawchive 页面 URL：创作者页 `https://pawchive.pw/{service}/user/{creator_id}`，或单帖页 `https://pawchive.pw/{service}/user/{creator_id}/post/{post_id}`；也支持省略协议/主机的相对路径（如 `patreon/user/96944064`，自动补全 `https://pawchive.pw/`） |
+| `path` | 下载目标根目录（**可选**——省略时读 `.env` 的 `PAWCHIVE_DATA_ROOT`，两者皆无则报错提示） |
 | `--dryrun` | 只拉 API 生成并打印下载计划（含已存在标记、关联渠道），不写任何文件 |
 | `--length N` | 只处理最新 N 个帖子（如 `--length 10` = 最新 10 帖） |
 | `--offset N` | 从第 N 个帖子开始（配合 `--length` 分批） |
@@ -33,6 +33,15 @@ node cli.js "https://pawchive.pw/patreon/user/96944064/post/166151636" "/volume1
 node cli.js "https://pawchive.pw/patreon/user/96944064" "/volume1/VirtualDSM/(Pawchive)/Pawchive" --dryrun
 node cli.js "https://pawchive.pw/patreon/user/96944064" "/volume1/VirtualDSM/(Pawchive)/Pawchive"
 ```
+
+### 示例 3：省略 path（读 .env 的 PAWCHIVE_DATA_ROOT）+ 相对路径
+
+```bash
+node cli.js "patreon/user/96944064" --dryrun    # path 从 .env 读，URL 自动补全域名
+node cli.js "patreon/user/96944064"             # 真实下载
+```
+
+> `.env` 需配置 `PAWCHIVE_DATA_ROOT=/volume1/VirtualDSM/(Pawchive)/Pawchive`（webui 默认输出同源）。
 
 ## 落盘结构
 
@@ -108,7 +117,7 @@ Pawchive 文件路径是 SHA-256 内容寻址（`/<2位>/<3位>/<64位hash>.<ext
     跑一次拿到 `PAWCHIVE_*` 键值后，之后直接 `node cli.js <参数>` 连续使用（cli 读 `.env`）。
   - **同参数调用 cli（每次启动时注入映射后透传，与 cli.js 参数完全一致）**：
     ```
-    node scripts/KToolBox-env-compat.js "https://pawchive.pw/patreon/user/96944064" /path/to/downloads --post-interval 5
+    node scripts/KToolBox-env-compat.js "https://pawchive.pw/patreon/user/96944064" /path/to/downloads
     ```
   - 指定 KToolBox 配置路径：`KTOOL_ENV=/path/to/ktool/.env KTOOLBOX_TOML=/path/to/ktoolbox.toml node scripts/KToolBox-env-compat.js --gen-env`（默认 `docs/.probe-ktoolbox/.env` 与 `docs/.probe-ktoolbox/ktoolbox.toml`）
   - 映射项：并发 `KTOOLBOX_JOB__COUNT`→`PAWCHIVE_CONCURRENCY`、文件 host `KTOOLBOX_DOWNLOADER__FILES_NETLOC`→`PAWCHIVE_FILES_BASE`（自动补 https://）、前缀 `KTOOLBOX_DOWNLOADER__FILE_PATH_PREFIX`→`PAWCHIVE_FILES_PREFIX`、API `KTOOLBOX_API__SCHEME/NETLOC/PATH`→`PAWCHIVE_API_BASE`、命名模板 `creator_dirname_format`→`PAWCHIVE_CREATOR_DIR_FORMAT`、`post_dirname_format`→`PAWCHIVE_POST_DIR_FORMAT`、`filename_format`→`PAWCHIVE_FILENAME_FORMAT`（变量 `{creator_name}/{creator_id}/{service}/{title}/{post_id}` 双向兼容）
@@ -152,8 +161,7 @@ Pawchive 文件路径是 SHA-256 内容寻址（`/<2位>/<3位>/<64位hash>.<ext
 | `PAWCHIVE_PAGE_INTERVAL_MS` | `1000` | 列表翻页间隔（防连发限流） |
 | `PAWCHIVE_RETRY_TIMES` | `10` | 下载重试次数 |
 | `PAWCHIVE_RETRY_INTERVAL_MS` | `3000` | 下载重试间隔 |
-| `PAWCHIVE_POST_INTERVAL` | `5` | 帖间等待秒数（反爬限频） |
-| `PAWCHIVE_SLOW_SPEED_KB` / `SLOW_DETECT_MS` / `SLOW_WAIT_MS` / `SLOW_MAX` | `50`/`10000`/`60000`/`3` | 慢速退避与反爬长等待参数 |
+| `PAWCHIVE_SLOW_SPEED_KB` / `SLOW_DETECT_MS` / `SLOW_WAIT_MS` / `SLOW_MAX` | `5`/`10000`/`60000`/`3` | 慢速退避与反爬长等待参数 |
 | `PAWCHIVE_DATA_ROOT` | 空 | 默认输出根目录（cli 参数 `path` 优先） |
 | `PAWCHIVE_CURL` | 自动探测 | curl 可执行文件路径（Alpine/BusyBox/NAS 可显式指定） |
 | `PAWCHIVE_LOG` | `./pawchive.log` | 日志文件路径 |
@@ -163,6 +171,8 @@ Pawchive 文件路径是 SHA-256 内容寻址（`/<2位>/<3位>/<64位hash>.<ext
 | `PAWCHIVE_WEB_PROTOCOL` / `HOST` / `PORT` | `KToolBox-webui` / `0.0.0.0` / `8789` | WebUI 兼容层：协议选择 / 监听地址 / 端口 |
 | `PAWCHIVE_WEB_DB` | `./webui.db` | 兼容层 SQLite 库（固定库重启不丢状态） |
 | `PAWCHIVE_WEB_DEBUG` | 空 | `1` 开启启动端点自检（11 核心端点写日志） |
+| `PAWCHIVE_STRICT_VERIFY` | `0` | 强校验模式：`1`=下载完计算本地 sha256 vs 目标 serverPath hash（不符优先修复重下——不保留坏文件） |
+| `PAWCHIVE_LOCK_DIR` | `<数据根>/.pawchive/locks` | 跨进程文件锁目录（同文件并发多 cli 防重复下载） |
 
 完整变量模板见 `env.example`。
 
@@ -186,7 +196,7 @@ Pawchive 文件路径是 SHA-256 内容寻址（`/<2位>/<3位>/<64位hash>.<ext
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
-| 1.0.3 | 2026-09-29 | WebUI 兼容层功能批次：auto-sync 真实实现（计划 CRUD/定时器/run-pause-resume——自动按作者下载）；创作者搜索（fetchAllCreators 缓存 7 天）；naming 保存写配置（env-compat 双向翻译）；①层前端错误注入（error-reporter → .client-errors.jsonl）；DEBUG 启动端点自检（PAWCHIVE_WEB_DEBUG=1）；作者软删 removed 机制；修订下载默认开；queued_files 对齐原版；legacy-migration 真实迁移；任务 spec.creators 双格式解析；契约扫描工具（contract-scan）；docs 全面重写（设计文档按代码逐节对齐） |
+| 1.0.3 | 2026-09-29 | WebUI 兼容层功能批次：auto-sync 真实实现（计划 CRUD/定时器/run-pause-resume——自动按作者下载）；创作者搜索（fetchAllCreators 缓存 7 天）；naming 保存写配置（env-compat 双向翻译）；①层前端错误注入（error-reporter → .client-errors.jsonl）；DEBUG 启动端点自检（PAWCHIVE_WEB_DEBUG=1）；作者软删 removed 机制；修订下载默认开；queued_files 对齐原版；legacy-migration 真实迁移；任务 spec.creators 双格式解析；契约扫描工具（contract-scan）；docs 全面重写（设计文档按代码逐节对齐）｜ **行为对齐批次（对齐 Python 原版）**：任务创建去重（同作者 ACTIVE → 409+current_task_id）、任务真中断（abortCtl 级联——stop/pause/删除真正停下载 + 终态不被覆盖）、progressReducer 累计统计（transferred 累计/speed 总速度/total/eta/active 清理）、强校验模式（PAWCHIVE_STRICT_VERIFY——sha256 vs serverPath——不符优先修复重下）、跨进程文件锁（同文件多 cli 防重复下载）、.tmp 分类（保留续传/清冗余）、断点续传 fsync、前端 P1（搜索补 service/user/任务编辑方案 A/MCP 空对齐） |
 | 1.0.2 | 2026-09-28 | 附件子目录开关（`PAWCHIVE_ATTACHMENTS_SUBDIR`）；dryrun 目录模拟；KToolBox 兼容层（`--gen-env` 一次性导出 + 同参数调用，env + ktoolbox.toml 命名模板映射）；migrate 双向（KToolBox→我们 + `--to-ktool` 我们→KToolBox，旧文件识别从 ktoolbox.toml 读）；KToolBox 风格 TTY 进度条（图形 Bar + 颜色）；缩略图已存在计入已存在、快速跳过帖计数；单帖统一收尾统计 |
 | 1.0.1 | 2026-09-28 | 快速跳过防漏网盘（帖 html driveLinks 字段按 provider 识别，历史帖自动补下网盘包）；缩略图已存在跳过（不重复下载）；网盘病毒确认页自动处理 + 断点续传 |
 | 1.0.0 | 2026-09-28 | 网盘下载集成（Google Drive provider 注册表可扩展、内容 sha256 跨帖去重复用、正文链接本地化）；缩略图回退；同名文件后缀；快速跳过与创作者 html 每帖刷新；worker 池式并发维持；HTTP 4xx/5xx 不重试；索引作者更新检测；全部环境变量化配置 |

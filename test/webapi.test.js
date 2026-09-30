@@ -148,9 +148,13 @@ async function main() {
     r = await req('GET', '/api/v1/pawchive/creators?name=RenKamui&service=patreon');
     check('pawchive/creators 搜索 → 200 array', r.status === 200 && Array.isArray(r.json()), `status=${r.status}`);
 
-    // 7. 404 边界
+    // 7. 404 边界（P1-3 修订 2026-09-29：mcp/status/tokens/tools 200 空对齐——页面显示未启用不崩；其余 /mcp 404）
     r = await req('GET', '/api/v1/mcp/status');
-    check('mcp → 404（设计删除）', r.status === 404);
+    check('mcp/status → 200 空结构（P1-3 空对齐）', r.status === 200 && r.json() && typeof r.json() === 'object', `status=${r.status} ${JSON.stringify(r.json()).slice(0, 60)}`);
+    r = await req('GET', '/api/v1/mcp/tools');
+    check('mcp/tools → 200 空数组（P1-3 空对齐）', r.status === 200 && Array.isArray(r.json()), `status=${r.status}`);
+    r = await req('GET', '/api/v1/mcp/unknown');
+    check('mcp 未实现子端点 → 404', r.status === 404);
     r = await req('GET', '/api/v1/nope');
     check('未知端点 → 404', r.status === 404);
   } finally {

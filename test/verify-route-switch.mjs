@@ -31,6 +31,8 @@ const NAV = [
   { path: '/auto-sync', key: 'auto' },
   { path: '/blockers', key: 'blockers' },
   { path: '/naming', key: 'naming' },
+  { path: '/mcp', key: 'mcp' },
+  { path: '/setting', key: 'setting' },
   { path: '/system', key: 'system' },
   { path: '/about', key: 'about' },
 ];

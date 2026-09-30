@@ -95,6 +95,36 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`[web] Pawchive WebUI 兼容层 http://${HOST}:${PORT}（协议: ${protocolName}，DB: ${core.db ? path.basename(process.env.PAWCHIVE_WEB_DB || 'webui.db') : '-'}）`);
+  sweepOrphanCurls(); // 孤儿下载 curl 清扫（上一轮 server 崩溃/被杀遗留的下载子进程——kill -9 无法被 cli 退出钩子拦截，此兜底 TERM 掉）
   if (typeof core.startAutoSyncScheduler === 'function') core.startAutoSyncScheduler(core.CONFIG.dataRoot || ''); // 自动同步调度（计划到期触发 sync 任务）
   if (DEBUG) startupSelfCheck(); // debug 开关——启动端点自检（写日志）
 });
+
+/** 启动清扫孤儿下载 curl：扫描 /proc/<pid>/cmdline 中 curl 且 -o 目标在数据根内、非本进程及其子进程 → SIGTERM（覆盖 kill -9/崩溃遗留） */
+function sweepOrphanCurls() {
+  const dataRoot = core.CONFIG.dataRoot || '';
+  const selfPid = String(process.pid);
+  const children = new Set();
+  try { const out = require('node:child_process').execSync('ps -o pid= --ppid ' + selfPid, { encoding: 'utf8' }); for (const l of out.trim().split(/\s+/)) if (l) children.add(l.trim()); } catch { /* 无子进程 */ }
+  let n = 0;
+  try {
+    for (const entry of fs.readdirSync('/proc')) {
+      if (!/^\d+$/.test(entry) || entry === selfPid || children.has(entry)) continue;
+      let cmd;
+      try { cmd = fs.readFileSync(`/proc/${entry}/cmdline`, 'utf8'); } catch { continue; }
+      const args = cmd.replace(/\0/g, ' ').trim();
+      if (!/curl/.test(args) || !/ -o /.test(args)) continue;
+      // -o 目标是否在数据根内（孤儿下载的判定：下载目标属于我们的数据目录）
+      const m = / -o ([^ ]+)/.exec(args);
+      if (!m) continue;
+      const target = m[1];
+      if (dataRoot && !target.startsWith(dataRoot)) continue;
+      try {
+        process.kill(Number(entry), 'SIGTERM');
+        n++;
+        console.log(`[web] 清扫孤儿下载 curl pid=${entry}（-o ${target}）`);
+      } catch { /* 已退出 */ }
+    }
+  } catch { /* /proc 不可用（非 Linux）跳过 */ }
+  if (n) console.log(`[web] 孤儿下载清扫完成：TERM ${n} 个`);
+}
