@@ -116,9 +116,9 @@ function sweepOrphanCurls() {
       const args = cmd.replace(/\0/g, ' ').trim();
       if (!/curl/.test(args) || !/ -o /.test(args)) continue;
       // -o 目标是否在数据根内（孤儿下载的判定：下载目标属于我们的数据目录）
-      const m = / -o ([^ ]+)/.exec(args);
-      if (!m) continue;
-      const target = m[1];
+      const outMatch = / -o ([^ ]+)/.exec(args);
+      if (!outMatch) continue;
+      const target = outMatch[1];
       if (dataRoot && !target.startsWith(dataRoot)) continue;
       try {
         process.kill(Number(entry), 'SIGTERM');

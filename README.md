@@ -21,8 +21,9 @@ core.js                               ← 兼容层业务内核：任务状态�
         │                              progressReducer 聚合、事件合成（onEvent 输出层补契约字段）、
         │                              SQLite 持久化；内部 require cli.js 复用下载引擎
         ▼
-cli.js                                ← 独立下载引擎（零依赖，仅 node: 内置模块 fs/path/
-                                          child_process/crypto）：索引拉取→去重→下载→解析
+cli.js                                ← 独立下载引擎（零依赖 npm 包；node: 内置模块 fs/path/
+                                          child_process/crypto + 本地模块 progress.js（下载进度条，
+                                          唯一被 require 的本地文件））：索引拉取→去重→下载→解析
                                           全流程自含，可 `node cli.js <url>` 独立运行
 ```
 

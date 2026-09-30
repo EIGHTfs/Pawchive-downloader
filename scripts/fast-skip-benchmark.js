@@ -21,8 +21,8 @@ function assert(name, cond, detail) {
 }
 
 function readPostObj(htmlPath) {
-  const m = fs.readFileSync(htmlPath, 'utf8').match(/<script id="pawchive-index" type="application\/json">([\s\S]*?)<\/script>/);
-  return m ? JSON.parse(m[1]) : null;
+  const match = fs.readFileSync(htmlPath, 'utf8').match(/<script id="pawchive-index" type="application\/json">([\s\S]*?)<\/script>/);
+  return match ? JSON.parse(match[1]) : null;
 }
 
 (async () => {

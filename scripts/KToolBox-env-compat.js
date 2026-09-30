@@ -33,8 +33,8 @@ const ktoolEnv = {};
 try {
   const text = fs.readFileSync(envFile, 'utf8');
   for (const line of text.split(/\r?\n/)) {
-    const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line.trim());
-    if (m && m[1].startsWith('KTOOLBOX_')) ktoolEnv[m[1]] = m[2].trim();
+    const envMatch = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line.trim());
+    if (envMatch && envMatch[1].startsWith('KTOOLBOX_')) ktoolEnv[envMatch[1]] = envMatch[2].trim();
   }
 } catch { /* 无 KToolBox .env：兼容层空转 */ }
 
@@ -44,11 +44,11 @@ const tomlNaming = {};
 try {
   let inNaming = false;
   for (const line of fs.readFileSync(tomlFile, 'utf8').split(/\r?\n/)) {
-    const t = line.trim();
-    if (/^\[.*\]$/.test(t)) { inNaming = t === '[naming]'; continue; }
-    if (!inNaming || t.startsWith('#') || !t.includes('=')) continue;
-    const m = /^([A-Za-z0-9_]+)\s*=\s*"([^"]*)"\s*$/.exec(t);
-    if (m) tomlNaming[m[1]] = m[2];
+    const trimmed = line.trim();
+    if (/^\[.*\]$/.test(trimmed)) { inNaming = trimmed === '[naming]'; continue; }
+    if (!inNaming || trimmed.startsWith('#') || !trimmed.includes('=')) continue;
+    const kvMatch = /^([A-Za-z0-9_]+)\s*=\s*"([^"]*)"\s*$/.exec(trimmed);
+    if (kvMatch) tomlNaming[kvMatch[1]] = kvMatch[2];
   }
 } catch { /* 无 ktoolbox.toml */ }
 
@@ -79,55 +79,55 @@ function buildMapped() {
 // ---------- 反向：PAWCHIVE_* → KTOOLBOX_*（KToolBox 兼容我们——写真实值；设计文档第十节映射定稿） ----------
 function toKToolBox(env = process.env) {
   const out = {};
-  const g = (k, d = '') => { const v = env[k]; return v === undefined || v === null ? d : String(v); };
+  const getVal = (k, defaultVal = '') => { const v = env[k]; return v === undefined || v === null ? defaultVal : String(v); };
   const isFalse = (k) => env[k] === undefined || String(env[k]).toUpperCase() === 'FALSE'; // PAWCHIVE_FALSE 无值/有值都=关
   // API base → scheme/netloc/path
-  const apiBase = g('PAWCHIVE_API_BASE');
+  const apiBase = getVal('PAWCHIVE_API_BASE');
   if (apiBase) {
     try {
-      const u = new URL(apiBase);
-      out.KTOOLBOX_API__SCHEME = u.protocol.replace(':', '');
-      out.KTOOLBOX_API__NETLOC = u.host;
-      out.KTOOLBOX_API__PATH = u.pathname.replace(/\/$/, '') || '/api/v1';
+      const parsedUrl = new URL(apiBase);
+      out.KTOOLBOX_API__SCHEME = parsedUrl.protocol.replace(':', '');
+      out.KTOOLBOX_API__NETLOC = parsedUrl.host;
+      out.KTOOLBOX_API__PATH = parsedUrl.pathname.replace(/\/$/, '') || '/api/v1';
     } catch { /* 非法 URL 跳过 */ }
   }
   // 文件 host
-  const filesBase = g('PAWCHIVE_FILES_BASE');
+  const filesBase = getVal('PAWCHIVE_FILES_BASE');
   if (filesBase) {
-    try { const u = new URL(/^https?:/i.test(filesBase) ? filesBase : 'https://' + filesBase); out.KTOOLBOX_DOWNLOADER__SCHEME = u.protocol.replace(':', ''); out.KTOOLBOX_DOWNLOADER__FILES_NETLOC = u.host; } catch { /* 跳过 */ }
+    try { const parsedUrl = new URL(/^https?:/i.test(filesBase) ? filesBase : 'https://' + filesBase); out.KTOOLBOX_DOWNLOADER__SCHEME = parsedUrl.protocol.replace(':', ''); out.KTOOLBOX_DOWNLOADER__FILES_NETLOC = parsedUrl.host; } catch { /* 跳过 */ }
   }
-  out.KTOOLBOX_JOB__COUNT = g('PAWCHIVE_CONCURRENCY');
-  out.KTOOLBOX_JOB__INCLUDE_REVISIONS = g('PAWCHIVE_INCLUDE_REVISIONS', '1') !== '0' ? 'true' : 'false'; // 反向写真实值（默认开→true）
-  out.KTOOLBOX_JOB__CREATOR_DIRNAME_FORMAT = g('PAWCHIVE_CREATOR_DIR_FORMAT');
-  out.KTOOLBOX_JOB__POST_DIRNAME_FORMAT = g('PAWCHIVE_POST_DIR_FORMAT');
-  out.KTOOLBOX_JOB__FILENAME_FORMAT = g('PAWCHIVE_FILENAME_FORMAT');
-  out.KTOOLBOX_JOB__POST_STRUCTURE__ATTACHMENTS = g('PAWCHIVE_ATTACHMENTS_SUBDIR') || '.';
-  out.KTOOLBOX_JOB__POST_STRUCTURE__CONTENT = g('PAWCHIVE_INDEX_FILENAME', 'pawchive-index.html');
-  out.KTOOLBOX_JOB__POST_STRUCTURE__REVISIONS = g('PAWCHIVE_REVISIONS_SUBDIR', 'revisions');
+  out.KTOOLBOX_JOB__COUNT = getVal('PAWCHIVE_CONCURRENCY');
+  out.KTOOLBOX_JOB__INCLUDE_REVISIONS = getVal('PAWCHIVE_INCLUDE_REVISIONS', '1') !== '0' ? 'true' : 'false'; // 反向写真实值（默认开→true）
+  out.KTOOLBOX_JOB__CREATOR_DIRNAME_FORMAT = getVal('PAWCHIVE_CREATOR_DIR_FORMAT');
+  out.KTOOLBOX_JOB__POST_DIRNAME_FORMAT = getVal('PAWCHIVE_POST_DIR_FORMAT');
+  out.KTOOLBOX_JOB__FILENAME_FORMAT = getVal('PAWCHIVE_FILENAME_FORMAT');
+  out.KTOOLBOX_JOB__POST_STRUCTURE__ATTACHMENTS = getVal('PAWCHIVE_ATTACHMENTS_SUBDIR') || '.';
+  out.KTOOLBOX_JOB__POST_STRUCTURE__CONTENT = getVal('PAWCHIVE_INDEX_FILENAME', 'pawchive-index.html');
+  out.KTOOLBOX_JOB__POST_STRUCTURE__REVISIONS = getVal('PAWCHIVE_REVISIONS_SUBDIR', 'revisions');
   // external_links：PAWCHIVE_FALSE（存在但不用）→ 原版默认路径 + 生成开关 false
   out.KTOOLBOX_JOB__POST_STRUCTURE__EXTERNAL_LINKS = 'external_links.txt';
-  out.KTOOLBOX_JOB__EXTRACT_EXTERNAL_LINKS = isFalse('PAWCHIVE_EXTERNAL_LINKS') ? 'false' : g('PAWCHIVE_EXTERNAL_LINKS');
+  out.KTOOLBOX_JOB__EXTRACT_EXTERNAL_LINKS = isFalse('PAWCHIVE_EXTERNAL_LINKS') ? 'false' : getVal('PAWCHIVE_EXTERNAL_LINKS');
   // 无对应组（过滤/时区/任务上限）→ 官方默认/关闭：max_active_tasks 对齐并发配置，其余不写（原版默认空）
-  out.KTOOLBOX_WEBUI__MAX_ACTIVE_TASKS = g('PAWCHIVE_CONCURRENCY');
+  out.KTOOLBOX_WEBUI__MAX_ACTIVE_TASKS = getVal('PAWCHIVE_CONCURRENCY');
   return out;
 }
 
 // ---------- PAWCHIVE_* → 配置对象（兼容层 getNaming/config 用——统一读 env） ----------
 function readPawchiveEnv(env = process.env) {
-  const g = (k, d = '') => { const v = env[k]; return v === undefined || v === null ? d : String(v); };
+  const getVal = (k, defaultVal = '') => { const v = env[k]; return v === undefined || v === null ? defaultVal : String(v); };
   return {
-    dataRoot: g('PAWCHIVE_DATA_ROOT'),
-    apiBase: g('PAWCHIVE_API_BASE'),
-    filesBase: g('PAWCHIVE_FILES_BASE'),
-    concurrency: g('PAWCHIVE_CONCURRENCY', '5'),
-    includeRevisions: g('PAWCHIVE_INCLUDE_REVISIONS', '1') !== '0', // 默认开
-    creatorDirFormat: g('PAWCHIVE_CREATOR_DIR_FORMAT'),
-    postDirFormat: g('PAWCHIVE_POST_DIR_FORMAT'),
-    filenameFormat: g('PAWCHIVE_FILENAME_FORMAT'),
-    attachmentsSubdir: g('PAWCHIVE_ATTACHMENTS_SUBDIR'),
-    indexFilename: g('PAWCHIVE_INDEX_FILENAME', 'pawchive-index.html'),
-    revisionsSubdir: g('PAWCHIVE_REVISIONS_SUBDIR', 'revisions'),
-    userAgent: g('PAWCHIVE_USER_AGENT'),
+    dataRoot: getVal('PAWCHIVE_DATA_ROOT'),
+    apiBase: getVal('PAWCHIVE_API_BASE'),
+    filesBase: getVal('PAWCHIVE_FILES_BASE'),
+    concurrency: getVal('PAWCHIVE_CONCURRENCY', '5'),
+    includeRevisions: getVal('PAWCHIVE_INCLUDE_REVISIONS', '1') !== '0', // 默认开
+    creatorDirFormat: getVal('PAWCHIVE_CREATOR_DIR_FORMAT'),
+    postDirFormat: getVal('PAWCHIVE_POST_DIR_FORMAT'),
+    filenameFormat: getVal('PAWCHIVE_FILENAME_FORMAT'),
+    attachmentsSubdir: getVal('PAWCHIVE_ATTACHMENTS_SUBDIR'),
+    indexFilename: getVal('PAWCHIVE_INDEX_FILENAME', 'pawchive-index.html'),
+    revisionsSubdir: getVal('PAWCHIVE_REVISIONS_SUBDIR', 'revisions'),
+    userAgent: getVal('PAWCHIVE_USER_AGENT'),
   };
 }
 

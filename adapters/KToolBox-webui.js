@@ -29,8 +29,8 @@ function matchPath(pathname, pattern) {
   if (segs.length !== ps.length) return null;
   const params = {};
   for (let i = 0; i < ps.length; i++) {
-    const m = /^\{([a-z_]+)\}$/.exec(ps[i]);
-    if (m) params[m[1]] = decodeURIComponent(segs[i]);
+    const paramMatch = /^\{([a-z_]+)\}$/.exec(ps[i]);
+    if (paramMatch) params[paramMatch[1]] = decodeURIComponent(segs[i]);
     else if (ps[i] !== segs[i]) return null;
   }
   return params;
@@ -62,8 +62,8 @@ function taskRecord(t) {
   }
   // URL 模式任务（spec 只有 post）——从链接解析 service/creator_id（前端渲染 target 读 spec.service——缺则 toLocaleLowerCase 崩）
   if (!spec.service && !spec.creator_id && spec.post) {
-    const m = /pawchive\.pw\/([a-z0-9_-]+)\/user\/([a-z0-9_-]+)/i.exec(String(spec.post));
-    if (m) spec = { ...spec, service: m[1], creator_id: m[2] };
+    const urlMatch = /pawchive\.pw\/([a-z0-9_-]+)\/user\/([a-z0-9_-]+)/i.exec(String(spec.post));
+    if (urlMatch) spec = { ...spec, service: urlMatch[1], creator_id: urlMatch[2] };
   }
   // 全面兜底：service/creator_id 强制字符串（前端 creatorPresentationName 的 item/creator.service.toLocaleLowerCase() 无保护——undefined 崩——空串安全）
   spec = { ...spec, service: String(spec.service || ''), creator_id: String(spec.creator_id ?? '') };
@@ -168,9 +168,9 @@ async function handle(method, pathname, url, req, res, core) {
     const p = matchPath(pathname, '/api/v1/creators/{service}/{creator_id}/avatar');
     if (p && method === 'GET') {
       const creators = core.listCreators(TARGET_PATH);
-      const c = creators.find(x => x.service === p.service && x.creator_id === p.creator_id);
-      if (c && c.avatar) {
-        const file = path.join(TARGET_PATH, c.dir, c.avatar);
+      const creator = creators.find(x => x.service === p.service && x.creator_id === p.creator_id);
+      if (creator && creator.avatar) {
+        const file = path.join(TARGET_PATH, creator.dir, creator.avatar);
         if (fs.existsSync(file)) {
           const ext = path.extname(file);
           const ct = { '.webp': 'image/webp', '.jpg': 'image/jpeg', '.png': 'image/png', '.img': 'application/octet-stream' }[ext] || 'application/octet-stream';
@@ -198,7 +198,7 @@ async function handle(method, pathname, url, req, res, core) {
 
   // ---------- config（schema 8 字段 + dotenv 读 .env——设计已确认） ----------
   if (pathname === '/api/v1/config/schema' && method === 'GET') {
-    const C = core.CONFIG;
+    const cfg = core.CONFIG;
     const env = process.env;
     // choices 可选（第 8 参——枚举型字段传 [{value,label}]；前端 ConfigurationPage 读 choice_mode/choices 渲染选择器——缺则固定文本，契约对齐补）
     const field = (path_, env_name, section, label, description, json_schema, value, choices = null) => ({
@@ -211,36 +211,36 @@ async function handle(method, pathname, url, req, res, core) {
     // 全部 PAWCHIVE_* 实际配置（按原版分类结构暴露——最终生效值页完整显示我们的真实配置；原版无对应的不列）
     const ENV_FIELDS = [
       // naming（命名模板）
-      ['naming.creator_dirname_format', 'PAWCHIVE_CREATOR_DIR_FORMAT', 'naming', '创作者目录模板', '{creator_name}/{creator_id}/{service}', 'string', C.creatorDirFormat],
-      ['naming.creator_prefix_format', 'PAWCHIVE_CREATOR_PREFIX_FORMAT', 'naming', '大小写冲突前缀', 'Windows 等大小写不敏感文件系统下创作者目录与帖子目录名冲突时添加的前缀模板（{service} 占位；空=不加）', 'string', C.creatorPrefixFormat],
-      ['naming.post_dirname_format', 'PAWCHIVE_POST_DIR_FORMAT', 'naming', '帖子目录模板', '{title}/{post_id}/{service}/{creator_id}/{published}/{added}', 'string', C.postDirFormat],
-      ['naming.filename_format', 'PAWCHIVE_FILENAME_FORMAT', 'naming', '文件名模板', '{} = 原文件名', 'string', C.fileFormat],
+      ['naming.creator_dirname_format', 'PAWCHIVE_CREATOR_DIR_FORMAT', 'naming', '创作者目录模板', '{creator_name}/{creator_id}/{service}', 'string', cfg.creatorDirFormat],
+      ['naming.creator_prefix_format', 'PAWCHIVE_CREATOR_PREFIX_FORMAT', 'naming', '大小写冲突前缀', 'Windows 等大小写不敏感文件系统下创作者目录与帖子目录名冲突时添加的前缀模板（{service} 占位；空=不加）', 'string', cfg.creatorPrefixFormat],
+      ['naming.post_dirname_format', 'PAWCHIVE_POST_DIR_FORMAT', 'naming', '帖子目录模板', '{title}/{post_id}/{service}/{creator_id}/{published}/{added}', 'string', cfg.postDirFormat],
+      ['naming.filename_format', 'PAWCHIVE_FILENAME_FORMAT', 'naming', '文件名模板', '{} = 原文件名', 'string', cfg.fileFormat],
       ['naming.filename_suffix_format', 'PAWCHIVE_FILENAME_SUFFIX_FORMAT', 'naming', '文件名后缀', '冲突改名后缀（可空）', 'string', env.PAWCHIVE_FILENAME_SUFFIX_FORMAT || ''],
       // job（下载任务）
       ['job.data_root', 'PAWCHIVE_DATA_ROOT', 'job', '下载目录', '创作者/帖子的存放根目录', 'string', env.PAWCHIVE_DATA_ROOT || ''],
       ['job.concurrency', 'PAWCHIVE_CONCURRENCY', 'job', '并行下载并发', 'worker 池式并发（1-16）', 'integer', env.PAWCHIVE_CONCURRENCY || 5],
       ['job.include_revisions', 'PAWCHIVE_INCLUDE_REVISIONS', 'job', '下载修订版本', '作者编辑过的历史版本——存 revisions/<id>/（默认开，硬链接去重）', 'boolean', env.PAWCHIVE_INCLUDE_REVISIONS !== '0'],
-      ['job.revisions_subdir', 'PAWCHIVE_REVISIONS_SUBDIR', 'job', '修订版本子目录', '默认 revisions', 'string', C.revisionsSubdir],
+      ['job.revisions_subdir', 'PAWCHIVE_REVISIONS_SUBDIR', 'job', '修订版本子目录', '默认 revisions', 'string', cfg.revisionsSubdir],
       ['job.download_drive', 'PAWCHIVE_DOWNLOAD_DRIVE', 'job', '下载正文网盘链接', 'Google Drive（provider 可扩展）', 'boolean', env.PAWCHIVE_DOWNLOAD_DRIVE !== '0'],
-      ['job.attachments_subdir', 'PAWCHIVE_ATTACHMENTS_SUBDIR', 'job', '附件子目录', '空=帖根目录；设 attachments 等', 'string', C.attachmentsSubdir],
-      ['job.index_filename', 'PAWCHIVE_INDEX_FILENAME', 'job', '详情索引文件名', '帖目录索引 html 名', 'string', C.indexFilename],
+      ['job.attachments_subdir', 'PAWCHIVE_ATTACHMENTS_SUBDIR', 'job', '附件子目录', '空=帖根目录；设 attachments 等', 'string', cfg.attachmentsSubdir],
+      ['job.index_filename', 'PAWCHIVE_INDEX_FILENAME', 'job', '详情索引文件名', '帖目录索引 html 名', 'string', cfg.indexFilename],
       ['job.write_creator_index', 'PAWCHIVE_WRITE_CREATOR_INDEX', 'job', '写创作者索引', 'pawchive-index.html 决定去重/网盘下载——强制启用，开关仅供显示（代码不读取）', 'boolean', env.PAWCHIVE_WRITE_CREATOR_INDEX !== '0'],
       // api（Pawchive API）
       ['api.base_url', 'PAWCHIVE_API_BASE', 'api', 'API 地址', 'Pawchive API base（含 /api/v1）', 'string', env.PAWCHIVE_API_BASE || 'https://pawchive.pw/api/v1'],
       ['api.retry_times', 'PAWCHIVE_RETRY_TIMES', 'api', '请求重试次数', 'API 失败重试', 'integer', env.PAWCHIVE_RETRY_TIMES || 3],
       ['api.retry_interval', 'PAWCHIVE_RETRY_INTERVAL_MS', 'api', '重试间隔（ms）', '', 'integer', env.PAWCHIVE_RETRY_INTERVAL_MS || 1500],
       // downloader（文件下载）
-      ['downloader.files_base', 'PAWCHIVE_FILES_BASE', 'downloader', '文件 host', 'file.pawchive.pw（DDoS-Guard 反爬）', 'string', C.filesBase],
+      ['downloader.files_base', 'PAWCHIVE_FILES_BASE', 'downloader', '文件 host', 'file.pawchive.pw（DDoS-Guard 反爬）', 'string', cfg.filesBase],
       ['downloader.tps', 'PAWCHIVE_TPS', 'downloader', '每秒新建连接上限', 'file host 反爬要求 ≤1', 'number', env.PAWCHIVE_TPS || 1],
-      ['downloader.thumb_base', 'PAWCHIVE_THUMB_BASE', 'downloader', '缩略图回退 base', '原图 404 时回退', 'string', C.thumbBase],
-      ['downloader.temp_suffix', 'PAWCHIVE_TEMP_SUFFIX', 'downloader', '临时文件后缀', '下载中临时后缀', 'string', C.tempSuffix],
+      ['downloader.thumb_base', 'PAWCHIVE_THUMB_BASE', 'downloader', '缩略图回退 base', '原图 404 时回退', 'string', cfg.thumbBase],
+      ['downloader.temp_suffix', 'PAWCHIVE_TEMP_SUFFIX', 'downloader', '临时文件后缀', '下载中临时后缀', 'string', cfg.tempSuffix],
       // webui（WebUI）
       ['webui.host', 'PAWCHIVE_WEB_HOST', 'webui', '监听地址', '默认 0.0.0.0', 'string', env.PAWCHIVE_WEB_HOST || '0.0.0.0'],
       ['webui.port', 'PAWCHIVE_WEB_PORT', 'webui', '监听端口', '默认 8789', 'integer', env.PAWCHIVE_WEB_PORT || 8789],
       ['webui.protocol', 'PAWCHIVE_WEB_PROTOCOL', 'webui', '前端协议', 'KToolBox-webui / native（预留）', 'string', env.PAWCHIVE_WEB_PROTOCOL || 'KToolBox-webui', [{ value: 'KToolBox-webui', label: 'KToolBox-webui' }, { value: 'native', label: 'native' }]],
       ['webui.max_active_tasks', 'PAWCHIVE_CONCURRENCY', 'webui', '执行中工作上限', '对齐我们下载并发（任务级上限=文件级并发值）', 'integer', env.PAWCHIVE_CONCURRENCY || 5],
       // general（其他）
-      ['general.user_agent', 'PAWCHIVE_USER_AGENT', 'general', '下载 UA', 'file host 要求可识别 UA', 'string', C.userAgent],
+      ['general.user_agent', 'PAWCHIVE_USER_AGENT', 'general', '下载 UA', 'file host 要求可识别 UA', 'string', cfg.userAgent],
       ['general.creators_cache_days', 'PAWCHIVE_CREATORS_TTL_DAY', 'general', '创作者缓存（天）', '搜索用全量缓存 TTL（默认 7）', 'integer', env.PAWCHIVE_CREATORS_TTL_DAY || 7],
     ];
     const fields = ENV_FIELDS.map(([p, e, s, l, d, type, v, choices]) => {
@@ -267,7 +267,7 @@ async function handle(method, pathname, url, req, res, core) {
     const p = matchPath(pathname, '/api/v1/config/dotenv/{name}');
     if (p) {
       const envPath = path.join(__dirname, '..', '.env');
-      const read = () => { let c = ''; try { c = fs.readFileSync(envPath, 'utf8'); } catch { /* 无 .env */ } return c; };
+      const read = () => { let content = ''; try { content = fs.readFileSync(envPath, 'utf8'); } catch { /* 无 .env */ } return content; };
       if (method === 'GET') {
         const content = p.name === 'production' ? '' : read();
         return json(res, 200, { name: p.name, path: p.name === 'production' ? '' : envPath, content, revision: String(content.length) });
@@ -349,10 +349,10 @@ async function handle(method, pathname, url, req, res, core) {
     const service = url.searchParams.get('service');
     if (creatorId && service) { // 有 creator_id+service → 拉创作者帖子列表
       const { posts } = await core.cli.fetchPostsWithResume(service, creatorId, { length: 100 });
-      const q = url.searchParams.get('name') || url.searchParams.get('query') || null;
+      const query = url.searchParams.get('name') || url.searchParams.get('query') || null;
       const off = Number(url.searchParams.get('offset')) || 0;
       // P1-1（2026-09-29）：补 service/user 字段（前端详情/创建任务读——缺则详情 404/建任务 400）+ 透传 name/query/offset 搜索参数
-      const list = (posts || []).filter(p => !q || (p.title || '').toLowerCase().includes(q.toLowerCase())).slice(off);
+      const list = (posts || []).filter(p => !query || (p.title || '').toLowerCase().includes(query.toLowerCase())).slice(off);
       return json(res, 200, list.map(p => ({ id: p.id, service, user: creatorId, title: p.title || '', published: p.published || null, added: p.added || null }))); // P1-1 修正（2026-09-29）：user 契约是 string（前端 ${selected.user} 拼 URL——对象会 "[object Object]" 详情 404/建任务 400）
     }
     return json(res, 200, []);
@@ -412,18 +412,18 @@ async function handle(method, pathname, url, req, res, core) {
     try {
       const envMap = {};
       for (const line of envText.split(/\r?\n/)) {
-        const m = /^\s*PAWCHIVE_([A-Z_]+)\s*=\s*(.*)$/.exec(line.trim());
-        if (m) envMap['PAWCHIVE_' + m[1]] = m[2].trim().replace(/^["']|["']$/g, '');
+        const envLine = /^\s*PAWCHIVE_([A-Z_]+)\s*=\s*(.*)$/.exec(line.trim());
+        if (envLine) envMap['PAWCHIVE_' + envLine[1]] = envLine[2].trim().replace(/^["']|["']$/g, '');
       }
       const KEY_TO_NAMING = { PAWCHIVE_CREATOR_DIR_FORMAT: 'creator_dirname_format', PAWCHIVE_POST_DIR_FORMAT: 'post_dirname_format', PAWCHIVE_FILENAME_FORMAT: 'filename_format' };
       for (const [envK, namingK] of Object.entries(KEY_TO_NAMING)) {
         if (envMap[envK] !== undefined) { recognized.push(envK); parsedNaming[namingK] = envMap[envK]; }
       }
     } catch { /* 解析失败返回空结果 */ }
-    const c = envCompat.readPawchiveEnv();
+    const envCfg = envCompat.readPawchiveEnv();
     return json(res, 200, {
       format: 'env',
-      naming: { creator_dirname_format: parsedNaming.creator_dirname_format || c.creatorDirFormat, post_dirname_format: parsedNaming.post_dirname_format || c.postDirFormat, filename_format: parsedNaming.filename_format || c.filenameFormat },
+      naming: { creator_dirname_format: parsedNaming.creator_dirname_format || envCfg.creatorDirFormat, post_dirname_format: parsedNaming.post_dirname_format || envCfg.postDirFormat, filename_format: parsedNaming.filename_format || envCfg.filenameFormat },
       digest: '', recognized_fields: recognized, defaulted_fields: [], warnings: [], differences: [], default_published_time_mode: 'pawchive_raw',
     });
   }
@@ -569,8 +569,8 @@ async function handle(method, pathname, url, req, res, core) {
       else if (first) { const [s, cid] = String(first).split(':'); service = s || null; creatorId = cid || null; }
     }
     if (!service && !creatorId && url) { // URL 模式：从 post 链接解析 service/creator_id（前端渲染 target 读 spec.service——缺则 toLocaleLowerCase 崩）
-      const m = /pawchive\.pw\/([a-z0-9_-]+)\/user\/([a-z0-9_-]+)/i.exec(url);
-      if (m) { service = m[1]; creatorId = m[2]; }
+      const urlMatch = /pawchive\.pw\/([a-z0-9_-]+)\/user\/([a-z0-9_-]+)/i.exec(url);
+      if (urlMatch) { service = urlMatch[1]; creatorId = urlMatch[2]; }
     }
     if (!service && !creatorId && !url && !specCreators.length) return json(res, 400, { detail: 'spec.service/creator_id、spec.creators 或 spec.post(URL) 至少一项' });
     const targetPath = spec.output || core.CONFIG.dataRoot || '';

@@ -33,7 +33,7 @@ const args = process.argv.slice(2);
 const flags = { dryrun: false, trash: null, target: null, toKtool: false };
 const positional = [];
 for (let i = 0; i < args.length; i++) {
-  const a = args[i];
+  const arg = args[i];
   if (a === '--dryrun') flags.dryrun = true;
   else if (a === '--trash') flags.trash = args[++i];
   else if (a === '--target') flags.target = args[++i];
@@ -60,14 +60,14 @@ const ktoolPostStruct = {};   // [naming.post_structure] 表
 try {
   let section = '';
   for (const line of fs.readFileSync(KTOOLBOX_TOML, 'utf8').split(/\r?\n/)) {
-    const t = line.trim();
-    const sec = /^\[([^\]]+)\]$/.exec(t);
-    if (sec) { section = sec[1]; continue; }
-    if (!t || t.startsWith('#') || !t.includes('=')) continue;
-    const m = /^([A-Za-z0-9_]+)\s*=\s*"?([^"#]*[^"#\s])"?\s*$/.exec(t);
-    if (!m) continue;
-    if (section === 'naming') ktoolNaming[m[1]] = m[2].trim();
-    else if (section === 'naming.post_structure') ktoolPostStruct[m[1]] = m[2].trim();
+    const trimmed = line.trim();
+    const secMatch = /^\[([^\]]+)\]$/.exec(trimmed);
+    if (secMatch) { section = secMatch[1]; continue; }
+    if (!trimmed || trimmed.startsWith('#') || !trimmed.includes('=')) continue;
+    const kvMatch = /^([A-Za-z0-9_]+)\s*=\s*"?([^"#]*[^"#\s])"?\s*$/.exec(trimmed);
+    if (!kvMatch) continue;
+    if (section === 'naming') ktoolNaming[kvMatch[1]] = kvMatch[2].trim();
+    else if (section === 'naming.post_structure') ktoolPostStruct[kvMatch[1]] = kvMatch[2].trim();
   }
 } catch { /* 无 ktoolbox.toml：旧文件识别走默认兼容列表 */ }
 
@@ -80,7 +80,7 @@ const attSub = ktoolPostStruct.attachments || 'attachments'; // KToolBox 附件�
 
 /** 字节级截断（文件名字节限制 255——日文等多字节标题会超，Buffer 90 字节安全截断防 ENAMETOOLONG） */
 function truncPath(s) {
-  const b = Buffer.from(String(s));
+  const buf = Buffer.from(String(s));
   if (b.length <= 90) return String(s);
   const cut = b.subarray(0, 90).toString('utf8').replace(/\uFFFD/g, ''); // 避免切坏 UTF-8 多字节
   return cut || String(s).slice(0, 30);
@@ -198,9 +198,9 @@ function runMigration() {
     if (remain.length === 0) {
       planLines.push(`  [清目录] ${path.relative(root, dir)}`);
       if (!flags.dryrun) {
-        const t = path.join(trashDir, `attachments-${truncPath(path.basename(parent))}-${ts}`); // 帖标题可能超长（日文长标题多字节）→ 字节级截断防 ENAMETOOLONG
-        fs.mkdirSync(path.dirname(t), { recursive: true });
-        fs.renameSync(dir, t);
+        const targetPath = path.join(trashDir, `attachments-${truncPath(path.basename(parent))}-${ts}`); // 帖标题可能超长（日文长标题多字节）→ 字节级截断防 ENAMETOOLONG
+        fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+        fs.renameSync(dir, targetPath);
         stats.dirRemoved++;
         cli.log(`[迁移] 清空附件目录 ${path.relative(root, dir)}`);
       } else stats.dirRemoved++;
@@ -214,7 +214,7 @@ function runMigration() {
   for (const postDir of postDirs) {
     planLines.push(`  [生成索引] ${path.relative(root, path.join(postDir, indexName))}`);
     if (!flags.dryrun) {
-      const n = genPostIndexFromPostJson(postDir, root);
+      const postIdx = genPostIndexFromPostJson(postDir, root);
       if (n !== null) { stats.genIndex++; cli.log(`[迁移] 反推索引 ${path.relative(root, postDir)}（${n} 文件）`); }
       else planLines.push(`  [跳过] ${path.relative(root, postDir)}（post.json 无文件信息）`);
     } else stats.genIndex++;
@@ -224,9 +224,9 @@ function runMigration() {
   for (const old of oldFiles) {
     planLines.push(`  [删旧] ${path.relative(root, old)}`);
     if (!flags.dryrun) {
-      const t = path.join(trashDir, `${path.basename(old)}-${ts}-${truncPath(path.basename(path.dirname(old)))}`); // 帖目录名字节级截断防 ENAMETOOLONG
-      fs.mkdirSync(path.dirname(t), { recursive: true });
-      fs.renameSync(old, t);
+      const targetPath = path.join(trashDir, `${path.basename(old)}-${ts}-${truncPath(path.basename(path.dirname(old)))}`); // 帖目录名字节级截断防 ENAMETOOLONG
+      fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+      fs.renameSync(old, targetPath);
       stats.oldRemoved++;
       cli.log(`[迁移] 回收旧文件 ${path.relative(root, old)}`);
     } else stats.oldRemoved++;
@@ -310,9 +310,9 @@ function runReverse() {
     // 5) 我们的索引移入回收站（ktool 结构不再用）
     planLines.push(`  [删索引] ${path.relative(root, indexPath)}`);
     if (!flags.dryrun) {
-      const t = path.join(trashDir, `${indexName}-${ts}-${path.basename(postDir)}`);
-      fs.mkdirSync(path.dirname(t), { recursive: true });
-      fs.renameSync(indexPath, t);
+      const targetPath = path.join(trashDir, `${indexName}-${ts}-${path.basename(postDir)}`);
+      fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+      fs.renameSync(indexPath, targetPath);
       stats.indexRemoved++;
       cli.log(`[迁移] 回收索引 ${path.relative(root, indexPath)}`);
     } else stats.indexRemoved++;

@@ -10,8 +10,8 @@
 'use strict';
 
 function arg(name) {
-  const i = process.argv.indexOf(name);
-  return i !== -1 && process.argv[i + 1] ? process.argv[i + 1] : null;
+  const idx = process.argv.indexOf(name);
+  return idx !== -1 && process.argv[idx + 1] ? process.argv[idx + 1] : null;
 }
 const REPO = arg('--repo') || 'Ljzd-PRO/KToolBox';
 const PKG = arg('--pkg') || 'ktoolbox';
@@ -24,24 +24,24 @@ async function githubLatest() {
     headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'pawchive-update-check' },
   });
   if (!r.ok) return null;
-  const d = await r.json();
-  return { version: String(d.tag_name || '').replace(/^v/, ''), url: d.html_url || '' };
+  const data = await r.json();
+  return { version: String(data.tag_name || '').replace(/^v/, ''), url: data.html_url || '' };
 }
 
 /** PyPI fallback（包最新版；5s 超时） */
 async function pypiLatest() {
   const r = await fetch(`https://pypi.org/pypi/${PKG}/json`, { signal: AbortSignal.timeout(5000) });
   if (!r.ok) return null;
-  const d = await r.json();
-  return { version: String((d.info && d.info.version) || '').replace(/^v/, ''), url: `https://pypi.org/project/${PKG}/` };
+  const data = await r.json();
+  return { version: String((data.info && data.info.version) || '').replace(/^v/, ''), url: `https://pypi.org/project/${PKG}/` };
 }
 
 /** 语义化版本比较（主.次.补丁[.bN]——改进上游只 != 的误报：1.0.0 vs 1.1.0b1 本地更高不报更新） */
 function compareVersions(a, b) {
   const num = v => (v.match(/\d+/g) || []).slice(0, 3).map(Number);
   const pre = v => (/[a-z]+\d*$/i.test(v) ? 0 : 1); // 带 pre 后缀（b/rc/alpha）比正式版低
-  const A = num(a), B = num(b);
-  for (let i = 0; i < 3; i++) { if ((A[i] || 0) !== (B[i] || 0)) return (A[i] || 0) > (B[i] || 0) ? 1 : -1; }
+  const va = num(a), vb = num(b);
+  for (let i = 0; i < 3; i++) { if ((va[i] || 0) !== (vb[i] || 0)) return (va[i] || 0) > (vb[i] || 0) ? 1 : -1; }
   return pre(a) - pre(b);
 }
 

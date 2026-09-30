@@ -39,16 +39,20 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const crypto = require('node:crypto'); // 网盘文件内容 hash（跨帖去重键）
+const { createProgressTracker, fmtSpeed } = require('./progress.js'); // 下载进度条（独立模块——TTY 图形 Bar）
+
+// 图片文件头魔数（响应为 octet-stream 无明确 image 类型时按魔数判定扩展名）
+const MAGIC = { JPEG: [0xff, 0xd8], PNG: [0x89, 0x50] };
 
 // ---------- .env 加载（可选，零依赖：同目录 .env 存在则解析 KEY=VALUE 注入 process.env；已有环境变量优先） ----------
 (() => {
   try {
     const content = fs.readFileSync(path.join(__dirname, '.env'), 'utf8');
     for (const line of content.split(/\r?\n/)) {
-      const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
-      if (!m || line.trim().startsWith('#')) continue;
-      const envVal = m[2].replace(/^['"]|['"]$/g, ''); // 去首尾引号
-      if (!(m[1] in process.env)) process.env[m[1]] = envVal; // 不覆盖已设置的环境变量
+      const envLine = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
+      if (!envLine || line.trim().startsWith('#')) continue;
+      const envVal = envLine[2].replace(/^['"]|['"]$/g, ''); // 去首尾引号
+      if (!(envLine[1] in process.env)) process.env[envLine[1]] = envVal; // 不覆盖已设置的环境变量
     }
   } catch { /* 无 .env 或不可读则跳过（纯 env 亦可运行） */ }
 })();
@@ -65,6 +69,9 @@ const CONFIG = {
   apiRetryTimes: 3,           // API 请求重试次数
   apiRetryIntervalMs: 2000,   // API 重试间隔
   apiRetryStatus: [429, 500, 502, 503, 504], // 可重试的 HTTP 状态
+  fetchTimeoutMs: 120000,     // 创作者列表独立 fetch 长超时（apiRequest 30s 不够 15MB 全量拉取）
+  netdiskKeepMinBytes: 65536, // 网盘 temp 保留下限（<64KB 视为病毒确认页残留，删掉从头下）
+  probeWindowMs: 5000,        // 真实下载测速窗口（探 file host 限频；env PAWCHIVE_PROBE_MS 可覆盖）
   downloadTimeoutMs: 300000,  // 单文件下载超时（5 分钟）
   tempSuffix: process.env.PAWCHIVE_TEMP_SUFFIX || '.tmp', // 断点续传临时文件后缀（env 可配）
   strictVerify: process.env.PAWCHIVE_STRICT_VERIFY === '1', // 强校验模式（默认关）：下载完计算本地 sha256 vs 目标 serverPath hash——不符优先修复（重下）不保留坏文件
@@ -143,9 +150,9 @@ function log(event) {
 // /fanbox/user/6570768/post/1836570 → 另含 post_id=1836570
 function parseWebpageUrl(url) {
   // 2026-09-29：相对路径自动补全域名（用户输入 patreon/user/49965584 不带协议/主机——拼 webBase 避免 new URL Invalid）
-  let u = String(url || '').trim();
-  if (u && !/^[a-z][a-z0-9+.-]*:\/\//i.test(u)) u = `${CONFIG.webBase}/${u.replace(/^\/+/, '')}`;
-  const parts = new URL(u).pathname.split('/').filter(Boolean);
+  let cleanUrl = String(url || '').trim();
+  if (cleanUrl && !/^[a-z][a-z0-9+.-]*:\/\//i.test(cleanUrl)) cleanUrl = `${CONFIG.webBase}/${cleanUrl.replace(/^\/+/, '')}`;
+  const parts = new URL(cleanUrl).pathname.split('/').filter(Boolean);
   const service = parts[0] || null;
   const userId = parts[1] === 'user' ? parts[2] || null : null;
   const postId = parts[3] === 'post' ? parts[4] || null : null;
@@ -272,7 +279,7 @@ const fetchAllCreators = async (targetPath = '') => {
   try { // 独立 fetch（apiRequest 默认 30s 超时不够 15MB——长超时 120s）
     const url = CONFIG.apiBase.replace(/\/+$/, '') + '/creators';
     const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), 120000);
+    const timer = setTimeout(() => ctl.abort(), CONFIG.fetchTimeoutMs);
     const res = await fetch(url, { method: 'GET', headers: { Accept: 'application/json' }, signal: ctl.signal });
     clearTimeout(timer);
     if (res.ok) data = await res.json();
@@ -399,7 +406,7 @@ function getFileUrl(serverPath) {
 
 /** 安全 decodeURIComponent：畸形百分号编码（如 %）返回原串，不抛 URIError */
 function safeDecode(s) {
-  try { return decodeURIComponent(s); } catch { return s; }
+  try { return decodeURIComponent(s); } catch { return s; } // 畸形百分号编码（% 等）——保留原串不抛 URIError
 }
 
 /** 由 FileReference 生成文件名：优先 name 字段，否则取 path 末段（safeDecode 防畸形 URI） */
@@ -563,7 +570,7 @@ async function fileExists(filePath) {
     await fs.promises.stat(filePath);
     return true;
   } catch {
-    return false;
+    return false; // stat 失败（不存在/无权限）→ 视为文件不存在
   }
 }
 
@@ -580,36 +587,36 @@ async function tpsGate() {
 /** 从 -D - 头文本解析文件总大小（同 KToolBox downloader：优先 Content-Range 的 / 后值——206 续传时 Content-Length 只是剩余量；无则 Content-Length——200 全量响应；-L 多响应取最后一个） */
 function parseContentLength(headerText) {
   let len = null;
-  let m;
+  let rangeMatch;
   const crRe = /^Content-Range:\s*bytes\s+\d+-\d+\/(\d+)/gim;
-  while ((m = crRe.exec(headerText)) !== null) len = Number(m[1]);
+  while ((rangeMatch = crRe.exec(headerText)) !== null) len = Number(rangeMatch[1]);
   if (len != null) return len;
   const clRe = /^Content-Length:\s*(\d+)/gim;
-  while ((m = clRe.exec(headerText)) !== null) len = Number(m[1]);
+  while ((rangeMatch = clRe.exec(headerText)) !== null) len = Number(rangeMatch[1]);
   return len;
 }
 
 /** 从 -D - 头文本解析 Content-Disposition 原始文件名（Google Drive 直链等）；解析失败返回 null */
 function parseContentDisposition(headerText) {
-  const m = /^Content-Disposition:\s*(?:attachment|inline);\s*filename="?([^";]+)"?/gim.exec(headerText || '');
-  return m ? m[1] : null;
+  const dispMatch = /^Content-Disposition:\s*(?:attachment|inline);\s*filename="?([^";]+)"?/gim.exec(headerText || '');
+  return dispMatch ? dispMatch[1] : null;
 }
 
 /** 计算文件内容 sha256（网盘文件跨帖去重键：同内容同 hash，不同 Drive ID 的同文件也能复用） */
 function fileSha256(file) {
   return new Promise((resolve, reject) => {
-    const h = crypto.createHash('sha256');
-    const s = fs.createReadStream(file);
-    s.on('data', c => h.update(c));
-    s.on('end', () => resolve(h.digest('hex')));
-    s.on('error', reject);
+    const hasher = crypto.createHash('sha256');
+    const stream = fs.createReadStream(file);
+    stream.on('data', c => hasher.update(c));
+    stream.on('end', () => resolve(hasher.digest('hex')));
+    stream.on('error', reject);
   });
 }
 
 /** 从链接提取 Google Drive 文件 ID：drive.google.com/file/d/<ID>/ 或 open?id=<ID>；非 drive 链接返回 null */
 function driveIdOf(url) {
-  const m = /drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/.exec(url) || /drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/.exec(url);
-  return m ? m[1] : null;
+  const idMatch = /drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/.exec(url) || /drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/.exec(url);
+  return idMatch ? idMatch[1] : null;
 }
 
 // ============ 网盘下载模块（可扩展：新增网盘类型只需注册一个 provider） ============
@@ -638,6 +645,9 @@ const NETDISK_PROVIDERS = {
   // baidu: { match: /pan\.baidu\.com\/s\/[A-Za-z0-9_-]+/, extract: ..., downloadUrl: ..., key: id => `baidu:${id}` },
 };
 
+/** 网盘 id 日志显示关键部分：URL 末段文件名（.../KJ8.mp4）——避免长 URL 前 50/70 字符截断导致同前缀（同作者同网盘）日志混淆 */
+const idTail = id => { const segMatch = /[^/?#]+(?=\?|$)/.exec(String(id).split('#')[0]); return segMatch ? segMatch[0] : String(id).slice(0, 30); };
+
 /** 提取正文所有外部链接（URL 正则去重——外链表格/正文本地化共用） */
 function extractContentLinks(content) {
   return [...new Set((content || '').match(/https?:\/\/[^\s"'<>（）()，。、；；]+/g) || [])];
@@ -645,9 +655,9 @@ function extractContentLinks(content) {
 
 /** 匹配正文第一个网盘链接 → {type, id(extract 结果), key(去重/复用键=完整 URL：drive 构造 share URL、dropbox 即规范 URL)}；无 → null（遍历 provider——新增网盘自动识别） */
 function matchNetdiskLink(content) {
-  for (const [type, p] of Object.entries(NETDISK_PROVIDERS)) {
-    const m = (content || '').match(p.match);
-    if (m) { const id = p.extract(m[0]); return { type, id, key: p.share ? p.share(id) : id }; }
+  for (const [type, provider] of Object.entries(NETDISK_PROVIDERS)) {
+    const linkMatch = (content || '').match(provider.match);
+    if (linkMatch) { const id = provider.extract(linkMatch[0]); return { type, id, key: provider.share ? provider.share(id) : id }; }
   }
   return null;
 }
@@ -662,6 +672,73 @@ function buildNetdiskFileMap(files) {
   return map;
 }
 
+/** 网盘文件已下载（hashIndex 记录存在）→ 硬链接/复制复用或跳过，返回记录项；未下载返回 null */
+async function netdiskReuseExisting(urlKey, type, id, postDir, hashIndex, out) {
+  const rec = hashIndex && hashIndex.get(urlKey);
+  if (!rec || !rec.rel || !(await fileExists(rec.rel))) return null;
+  const srcName = path.basename(rec.rel);
+  const final = path.join(postDir, srcName);
+  if (final !== rec.rel && !(await fileExists(final))) {
+    const how = await linkOrCopy(rec.rel, final);
+    console.log(`  [网盘复用] ${srcName}（${type}:${id}，${how === 'linked' ? '硬链接' : '复制'}复用）`);
+    log(`[下载] 网盘复用 ${srcName}（${type}:${id}）`);
+  } else {
+    console.log(`  [网盘已存在] ${srcName}`); // 本帖已下载（复用源即本帖或目标已存在）
+  }
+  out.push({ filename: srcName, size: rec.size ?? null, exists: true, serverPath: urlKey, rel: path.relative(postDir, final), savePath: final });
+  return out;
+}
+
+/** 网盘单文件下载（含断点续传/病毒确认页重下/HTML 校验）——成功返回 {size, result, netdiskTmp}；失败返回 null（已清理临时文件） */
+async function netdiskDownloadOnce(url, netdiskTmp) {
+  let tempSize = 0;
+  // 断点续传：Drive 直链支持 Range（accept-ranges 实测 206）；疑似病毒确认页残留（<64KB 小文件）删掉从头下
+  try { if ((await fs.promises.stat(netdiskTmp)).size < CONFIG.netdiskKeepMinBytes) await fs.promises.rm(netdiskTmp, { force: true }).catch(() => {}); } catch { /* 无残留 */ }
+  try { tempSize = (await fs.promises.stat(netdiskTmp)).size; } catch { tempSize = 0; } // 无 tmp = 从头下载
+  let result;
+  try { result = await streamOnce(url, netdiskTmp, tempSize, null, { shouldAbort: () => false }); } catch { result = { status: 'err' }; } // stream 异常→按失败处理
+  if (result.status !== 'ok') return { status: result.status, tmpPath: netdiskTmp };
+  let size = 0;
+  try { size = (await fs.promises.stat(netdiskTmp)).size; } catch { /* 0 */ }
+  // Google Drive 大文件（>100MB 无法扫描病毒）会返回确认页而非文件：识别后带 confirm=t 重下
+  if (size < CONFIG.netdiskKeepMinBytes) {
+    const head = await fs.promises.readFile(netdiskTmp, 'utf8').catch(() => '');
+    if (/Virus scan warning|uc-warning-caption|name="confirm"/.test(head)) {
+      await fs.promises.rm(netdiskTmp, { force: true }).catch(() => {});
+      try { result = await streamOnce(`${url}&confirm=t`, netdiskTmp, 0, null, { shouldAbort: () => false }); } catch { result = { status: 'err' }; } // 确认页重下异常→失败
+      if (result.status !== 'ok') return { status: result.status, tmpPath: netdiskTmp };
+      try { size = (await fs.promises.stat(netdiskTmp)).size; } catch { /* 0 */ }
+    }
+  }
+  // 通用内容校验：响应若为 HTML 页（dropbox 失效链接返回网页、drive 确认页重试后仍异常等）→ 视为失败不落盘
+  const headHtml = await fs.promises.readFile(netdiskTmp).then(b => b.subarray(0, 512).toString('utf8')).catch(() => '');
+  if (/^\s*<(!doctype\s+html|html)/i.test(headHtml)) return { status: 'html_page', tmpPath: netdiskTmp };
+  return { status: 'ok', size, tmpPath: netdiskTmp, result };
+}
+
+/** 网盘下载收尾：HTML 校验通过后落盘/已存在登记，返回记录项；失败返回 null */
+async function netdiskFinalize(urlKey, type, id, postDir, hashIndex, out, { size, tmpPath, result }) {
+  const fallbackName = (t, i) => { const segMatch = /[^/?#]+(?=\?|$)/.exec(String(i).split('#')[0]); return segMatch ? `${t}_${segMatch[0]}` : `${t}_${i}`; }; // fallback 取 URL 末段文件名（如 dropbox 链接的 Miku_Study...mp4），避免整 URL 作文件名
+  const name = sanitizeName(result.disposition || fallbackName(type, id)); // 响应头原始文件名，失败退 <type>_<URL末段>
+  const final = path.join(postDir, name);
+  if (await fileExists(final)) { // 本目录已下载（存在即跳过）
+    await fs.promises.rm(tmpPath, { force: true }).catch(() => {});
+    console.log(`  [网盘已存在] ${name}`);
+    const hash = await fileSha256(final).catch(() => null);
+    if (hash && hashIndex) { hashIndex.set(`sha256:${hash}`, { rel: final, size }); hashIndex.set(urlKey, { rel: final, size }); }
+    out.push({ filename: name, size, exists: true, serverPath: urlKey, rel: path.relative(postDir, final), savePath: final });
+    return out;
+  }
+  await fs.promises.rename(tmpPath, final);
+  console.log(`  [网盘下载] ${name} ${fmtBytes(size)}`);
+  log(`[下载] 网盘 ${name}（${type}:${id}，${fmtBytes(size)}）`);
+  // 内容 hash 作去重键（跨帖同内容复用）+ 网盘 ID 键（同链接复用）
+  const hash = await fileSha256(final).catch(() => null);
+  if (hash && hashIndex) { hashIndex.set(`sha256:${hash}`, { rel: final, size }); hashIndex.set(urlKey, { rel: final, size }); }
+  out.push({ filename: name, size, exists: true, serverPath: urlKey, rel: path.relative(postDir, final), savePath: final });
+  return out;
+}
+
 /** 下载正文里的网盘链接（遍历已注册 provider）到帖子目录；文件名取响应头原始名。
  * 返回记录项 [{filename, size, exists, serverPath(网盘=完整网址), rel, savePath}]——并入帖 html files[] 展示。 */
 async function downloadNetdiskFiles(detail, postDir, hashIndex) {
@@ -673,78 +750,17 @@ async function downloadNetdiskFiles(detail, postDir, hashIndex) {
     for (const id of ids) {
       // 跨帖复用：hashIndex 里该网盘 ID 已下载（同链接/同内容）→ 硬链接/复制复用，不重复下载
       const urlKey = p.share ? p.share(id) : id; // 记录/复用统一键 = 完整网盘 URL（drive 构造分享 URL、dropbox 即规范 URL；http/https 前缀天然标识网盘）
-      const rec = hashIndex && hashIndex.get(urlKey);
-      if (rec && rec.rel && await fileExists(rec.rel)) {
-        const srcName = path.basename(rec.rel);
-        const final = path.join(postDir, srcName);
-        if (final !== rec.rel && !(await fileExists(final))) {
-          const how = await linkOrCopy(rec.rel, final);
-          console.log(`  [网盘复用] ${srcName}（${type}:${id}，${how === 'linked' ? '硬链接' : '复制'}复用）`);
-          log(`[下载] 网盘复用 ${srcName}（${type}:${id}）`);
-        } else {
-          console.log(`  [网盘已存在] ${srcName}`); // 本帖已下载（复用源即本帖或目标已存在）
-        }
-        out.push({ filename: srcName, size: rec.size ?? null, exists: true, serverPath: urlKey, rel: path.relative(postDir, final), savePath: final });
-        continue;
-      }
+      if (await netdiskReuseExisting(urlKey, type, id, postDir, hashIndex, out)) continue;
       const url = p.downloadUrl(id);
       const netdiskTmp = path.join(postDir, sanitizeName(`netdisk_${type}_${id}`) + CONFIG.tempSuffix); // dropbox 等以完整 URL 作 id：tmp 名必须消毒（否则 https:// 的 // 被当路径分隔 → 创建 netdisk_dropbox_https: 目录树）
-      // 断点续传：Drive 直链支持 Range（accept-ranges 实测 206）；疑似病毒确认页残留（<64KB 小文件）删掉从头下
-      let tempSize = 0;
-      try { if ((await fs.promises.stat(netdiskTmp)).size < 65536) await fs.promises.rm(netdiskTmp, { force: true }).catch(() => {}); } catch { /* 无残留 */ }
-      try { tempSize = (await fs.promises.stat(netdiskTmp)).size; } catch { tempSize = 0; }
-      let result;
-      try { result = await streamOnce(url, netdiskTmp, tempSize, null, { shouldAbort: () => false }); } catch { result = { status: 'err' }; }
-      if (result.status !== 'ok') {
-        console.log(`  [网盘失败] ${type}:${id}（${result.status}）`);
-        log(`[下载] 网盘 ${type}:${id} 失败（${result.status}）`);
-        await fs.promises.rm(netdiskTmp, { force: true }).catch(() => {});
+      const dl = await netdiskDownloadOnce(url, netdiskTmp);
+      if (dl.status !== 'ok') {
+        console.log(`  [网盘失败] ${type}:${id}（${dl.status === 'html_page' ? '响应为 HTML 页，非文件' : dl.status}）`);
+        log(`[下载] 网盘 ${type}:${id} 失败（${dl.status === 'html_page' ? '响应为 HTML 页' : dl.status}）`);
+        await fs.promises.rm(dl.tmpPath, { force: true }).catch(() => {});
         continue;
       }
-      let size = 0;
-      try { size = (await fs.promises.stat(netdiskTmp)).size; } catch { /* 0 */ }
-      // Google Drive 大文件（>100MB 无法扫描病毒）会返回确认页而非文件：识别后带 confirm=t 重下
-      if (size < 65536) {
-        const head = await fs.promises.readFile(netdiskTmp, 'utf8').catch(() => '');
-        if (/Virus scan warning|uc-warning-caption|name="confirm"/.test(head)) {
-          console.log(`  [网盘确认] ${type}:${id} 大文件病毒扫描确认页，带 confirm 重下`);
-          await fs.promises.rm(netdiskTmp, { force: true }).catch(() => {});
-          try { result = await streamOnce(`${url}&confirm=t`, netdiskTmp, 0, null, { shouldAbort: () => false }); } catch { result = { status: 'err' }; }
-          if (result.status !== 'ok') {
-            console.log(`  [网盘失败] ${type}:${id}（${result.status}）`);
-            log(`[下载] 网盘 ${type}:${id} 失败（${result.status}）`);
-            await fs.promises.rm(netdiskTmp, { force: true }).catch(() => {});
-            continue;
-          }
-          try { size = (await fs.promises.stat(netdiskTmp)).size; } catch { /* 0 */ }
-        }
-      }
-      // 通用内容校验：响应若为 HTML 页（dropbox 失效链接返回网页、drive 确认页重试后仍异常等）→ 视为失败不落盘
-      const headHtml = await fs.promises.readFile(netdiskTmp).then(b => b.subarray(0, 512).toString('utf8')).catch(() => '');
-      if (/^\s*<(!doctype\s+html|html)/i.test(headHtml)) {
-        console.log(`  [网盘失败] ${type}:${id.slice(0, 50)}（响应为 HTML 页，非文件）`);
-        log(`[下载] 网盘 ${type}:${id} 失败（响应为 HTML 页）`);
-        await fs.promises.rm(netdiskTmp, { force: true }).catch(() => {});
-        continue;
-      }
-      const fallbackName = (t, i) => { const m = /[^/?#]+(?=\?|$)/.exec(String(i).split('#')[0]); return m ? `${t}_${m[0]}` : `${t}_${i}`; }; // fallback 取 URL 末段文件名（如 dropbox 链接的 Miku_Study...mp4），避免整 URL 作文件名
-      const name = sanitizeName(result.disposition || fallbackName(type, id)); // 响应头原始文件名，失败退 <type>_<URL末段>
-      const final = path.join(postDir, name);
-      if (await fileExists(final)) { // 本目录已下载（存在即跳过）
-        await fs.promises.rm(netdiskTmp, { force: true }).catch(() => {});
-        console.log(`  [网盘已存在] ${name}`);
-        const hash = await fileSha256(final).catch(() => null);
-        if (hash && hashIndex) { hashIndex.set(`sha256:${hash}`, { rel: final, size }); hashIndex.set(urlKey, { rel: final, size }); }
-        out.push({ filename: name, size, exists: true, serverPath: urlKey, rel: path.relative(postDir, final), savePath: final });
-        continue;
-      }
-      await fs.promises.rename(netdiskTmp, final);
-      console.log(`  [网盘下载] ${name} ${fmtBytes(size)}`);
-      log(`[下载] 网盘 ${name}（${type}:${id}，${fmtBytes(size)}）`);
-      // 内容 hash 作去重键（跨帖同内容复用）+ 网盘 ID 键（同链接复用）
-      const hash = await fileSha256(final).catch(() => null);
-      if (hash && hashIndex) { hashIndex.set(`sha256:${hash}`, { rel: final, size }); hashIndex.set(urlKey, { rel: final, size }); }
-      out.push({ filename: name, size, exists: true, serverPath: urlKey, rel: path.relative(postDir, final), savePath: final });
+      await netdiskFinalize(urlKey, type, id, postDir, hashIndex, out, dl);
     }
   }
   return out;
@@ -753,23 +769,23 @@ async function downloadNetdiskFiles(detail, postDir, hashIndex) {
 /** 计算文件 sha256（流式——大文件不占内存；失败返回 null） */
 async function sha256File(filePath) {
   try {
-    const h = crypto.createHash('sha256');
+    const hasher = crypto.createHash('sha256');
     await new Promise((resolve, reject) => {
       const rs = fs.createReadStream(filePath);
-      rs.on('data', d => h.update(d));
+      rs.on('data', d => hasher.update(d));
       rs.on('end', resolve);
       rs.on('error', reject);
     });
-    return h.digest('hex');
-  } catch { return null; }
+    return hasher.digest('hex');
+  } catch { return null; } // 无锁文件/读失败→未持有锁
 }
 
 /** 跨进程文件锁（2026-09-29——同 serverPath 并发多 cli 防重复下载）：.pawchive/locks/<sha1(serverPath)>.lock
  * fs.open('wx') 原子创建——同文件并发只有一个拿锁；拿不到=别处在下 → 返回 null（调用方跳过）；
  * 锁内容写 pid；mtime 超 24h 视为死锁（进程崩溃残留）自动清理重试 */
 const LOCK_STALE_MS = 24 * 3600 * 1000;
-async function acquireLock(serverPath) {
-  const dir = path.join(CONFIG.dataRoot || '', '.pawchive', 'locks');
+async function acquireLock(serverPath, targetPath) {
+  const dir = path.join(targetPath || '', '.pawchive', 'locks'); // 锁目录放目标根（而非 CONFIG.dataRoot——未配 dataRoot 时锁位置不会错位）
   await fs.promises.mkdir(dir, { recursive: true }).catch(() => {});
   const lockPath = path.join(dir, crypto.createHash('sha1').update(serverPath).digest('hex').slice(0, 24) + '.lock');
   for (let i = 0; i < 2; i++) {
@@ -782,11 +798,12 @@ async function acquireLock(serverPath) {
       if (e && e.code === 'EEXIST') {
         try {
           const st = await fs.promises.stat(lockPath);
-          // 死锁检测（中断残留）：锁内容写 pid——进程已死（/proc/<pid> 不存在）或超 24h 视为死锁，删锁重试（不阻塞后续续传）
+          // 死锁检测（中断残留）：锁内容写 pid——进程已死（process.kill 信号探测，跨平台不依赖 /proc）或超 24h 视为死锁，删锁重试（不阻塞后续续传）
           const pidStr = (await fs.promises.readFile(lockPath, 'utf8').catch(() => '')).trim();
-          const pidAlive = pidStr && fs.existsSync(`/proc/${pidStr}`);
+          let pidAlive = false;
+          if (pidStr) { try { process.kill(Number(pidStr), 0); pidAlive = true; } catch (e) { pidAlive = e.code === 'EPERM'; } } // EPERM=进程存在但无权限
           if (!pidAlive || Date.now() - st.mtimeMs > LOCK_STALE_MS) { await fs.promises.rm(lockPath, { force: true }).catch(() => {}); continue; }
-        } catch { continue; }
+        } catch { continue; } // 锁目录异常→跳过该文件
         return null; // 别处 cli 正在下载——跳过
       }
       return null;
@@ -807,6 +824,9 @@ async function downloadFile(job, { onProgress = null, expectedSize: optExpected 
   const tmpPath = `${finalPath}${CONFIG.tempSuffix}`;
   let tempSize = 0;
   try { tempSize = (await fs.promises.stat(tmpPath)).size; } catch { /* 无临时文件则从头下 */ }
+
+  // 重置续传/速度/慢速退避状态（重试、退避、强校验重下三处共用；spLast=tempSize 使滑动窗口从断点起）
+  const resetResumeState = () => { spLast = tempSize; spLastTime = 0; speed = 0; slowSince = 0; };
 
   // 大小基准来自上游（html 记录 / API size），不再单独探测请求；进度百分比用该值（无则显示 ?）
   const probeTotal = optExpected;
@@ -837,7 +857,7 @@ async function downloadFile(job, { onProgress = null, expectedSize: optExpected 
   };
 
   for (let attempt = 0; attempt <= CONFIG.downloadRetryTimes; attempt++) {
-    if (abortCtl && abortCtl.shouldAbort()) return { status: 'failed:aborted', job }; // 任务 abort（2026-09-29——真中断级联）
+    if (abortCtl && abortCtl.shouldAbort()) return failWith('aborted', job); // 任务 abort（2026-09-29——真中断级联）
     await tpsGate(); // 每次建连前限速，保持每秒 <= tps 个连接
     try {
       const result = await streamOnce(job.fileUrl, tmpPath, tempSize, progressCb, {
@@ -851,8 +871,8 @@ async function downloadFile(job, { onProgress = null, expectedSize: optExpected 
           console.log(`  [限速退避 ${slowCount}/${CONFIG.slowMax}] ${job.filename}（<${CONFIG.slowSpeedKb}KB/s 持续 ${CONFIG.slowDetectMs / 1000}s，等待 ${CONFIG.slowWaitMs / 1000}s 后续传）`);
           log(`[下载] 限速退避 ${slowCount}/${CONFIG.slowMax} ${job.filename}`);
           await sleep(CONFIG.slowWaitMs);
-          try { tempSize = (await fs.promises.stat(tmpPath)).size; } catch { tempSize = 0; }
-          spLast = tempSize; spLastTime = 0; speed = 0; slowSince = 0;
+          try { tempSize = (await fs.promises.stat(tmpPath)).size; } catch { tempSize = 0; } // 无 tmp 从头下载
+          resetResumeState();
           attempt--; // 慢速退避不消耗重试配额（continue 会 attempt++，先抵消；退避由 slowCount/slowMax 独立计数）
           continue;
         }
@@ -863,8 +883,8 @@ async function downloadFile(job, { onProgress = null, expectedSize: optExpected 
           if (onProgress) onProgress({ filename: job.filename, state: `retry:${result.status}` }); // 引擎重试上报（与 catch 分支一致——835 curl 失败重试也发 retry 状态→download.retrying 事件→waiting_retries 面板）
           console.log(`  [重试 ${attempt + 1}/${CONFIG.downloadRetryTimes}] ${job.filename} (${result.status})`);
           await sleep(CONFIG.downloadRetryIntervalMs);
-          try { tempSize = (await fs.promises.stat(tmpPath)).size; } catch { tempSize = 0; }
-          spLast = tempSize; spLastTime = 0; speed = 0; slowSince = 0;
+          try { tempSize = (await fs.promises.stat(tmpPath)).size; } catch { tempSize = 0; } // 无 tmp 从头下载
+          resetResumeState();
           continue;
         }
         // HTTP 错误（curl_exit_22 = 4xx/5xx，如 404 失效链接）：回退缩略图（img.pawchive.pw/thumbnail/），
@@ -888,7 +908,7 @@ async function downloadFile(job, { onProgress = null, expectedSize: optExpected 
             try { ts = (await fs.promises.stat(tmpPath)).size; } catch { /* 0 */ }
             if (ts === CONFIG.antibotSize || (thumbResult.contentLength != null && ts !== thumbResult.contentLength)) { // 缩略图也异常
               await fs.promises.rm(tmpPath, { force: true }).catch(() => {});
-              return { status: `failed:${result.status}`, job };
+              return failWith(result.status, job);
             }
             await fs.promises.rename(tmpPath, thumbPath); // pp/thumbPath 已在回退分支顶部定义
             console.log(`  [缩略图回退] ${job.filename}（原图 404，已下载缩略图 ${fmtBytes(ts)}）`);
@@ -896,9 +916,9 @@ async function downloadFile(job, { onProgress = null, expectedSize: optExpected 
             return { status: 'downloaded_thumb', job, size: ts, savePath: thumbPath }; // savePath=实际缩略图路径（③产物登记用——原图 404 回退时 job.savePath 是原图路径不存在）
           }
           await fs.promises.rm(tmpPath, { force: true }).catch(() => {});
-          return { status: `failed:${result.status}`, job };
+          return failWith(result.status, job);
         }
-        return { status: `failed:${result.status}`, job };
+        return failWith(result.status, job);
       }
       // 完整性校验：落盘大小与预期（探测/Content-Length）比对；376B 或大小不符 = 反爬占位，
       // 删除占位不落正式文件，等待后重试（防「下载完成但文件是 376B bot 提示」）
@@ -965,11 +985,11 @@ async function downloadFile(job, { onProgress = null, expectedSize: optExpected 
         // 同样保留 .tmp 断点续传
         // fsync（2026-09-29 对齐）：续传前强制落盘再 stat（防 OS 缓存 stat 与实际不一致——空洞定位错）
         try { const fd = await fs.promises.open(tmpPath, 'r+'); await fd.sync().catch(() => {}); await fd.close(); } catch { /* .tmp 不存在则 0 */ }
-        try { tempSize = (await fs.promises.stat(tmpPath)).size; } catch { tempSize = 0; }
-        spLast = tempSize; spLastTime = 0; speed = 0; slowSince = 0;
+        try { tempSize = (await fs.promises.stat(tmpPath)).size; } catch { tempSize = 0; } // 无 tmp 从头下载
+        resetResumeState();
         continue;
       }
-      return { status: `failed:${status}`, job };
+      return failWith(status, job);
     }
   }
   return { status: 'failed:unknown', job };
@@ -1029,7 +1049,7 @@ async function streamOnce(fileUrl, tmpPath, tempSize, onProgress = null, abortCt
 }
 
 /** 真实下载不落盘测速（curl -o /dev/null，窗口内速度）；返回 {speedBps, sizeB, code} */
-function probeFileSpeed(fileUrl, windowMs = 5000) {
+function probeFileSpeed(fileUrl, windowMs = CONFIG.probeWindowMs) {
   return new Promise(resolve => {
     const p = trackCurl(spawn(CURL_BIN, [
       '-s', '-o', '/dev/null', '-w', '%{speed_download} %{size_download}',
@@ -1064,12 +1084,12 @@ function shouldRetry(status) {
 /** 字节格式化（B/KB/MB/GB，同 rich.filesize.decimal 用途） */
 function fmtBytes(n) {
   if (n == null || isNaN(n)) return '?';
-  const u = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
   let i = 0;
-  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
-  return `${n.toFixed(i ? 1 : 0)}${u[i]}`;
+  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+  return `${n.toFixed(i ? 1 : 0)}${units[i]}`;
 }
-const fmtSpeed = n => (n == null || isNaN(n) ? '?/s' : `${fmtBytes(n)}/s`);
+// fmtSpeed 已移至 progress.js（下载进度条模块——单一来源）
 
 // ---------- pawchive-index.html 索引（对齐 gbmd description.html：人读页 + 内嵌 JSON 机读块） ----------
 function esc(s) {
@@ -1086,10 +1106,10 @@ function buildIndexJsonBlock(obj) {
 /** 从 html 文本解析机读索引块（schema 不符/缺失返回 null） */
 function parseIndexObj(html) {
   if (!html) return null;
-  const m = html.match(/<script id="pawchive-index"[^>]*>([\s\S]*?)<\/script>/);
-  if (!m) return null;
+  const idxMatch = html.match(/<script id="pawchive-index"[^>]*>([\s\S]*?)<\/script>/);
+  if (!idxMatch) return null;
   try {
-    const parsed = JSON.parse(m[1]);
+    const parsed = JSON.parse(idxMatch[1]);
     if (parsed && parsed.schema === 1) return parsed;
   } catch { /* 解析失败 = 无效索引 */ }
   return null;
@@ -1194,14 +1214,14 @@ function buildPostIndexHtml(post, creatorName, postDirDisplay, files) {
   <h2>正文</h2>
   <div class="desc">${(() => {
     // 正文里的网盘链接（已下载）→ a 标签指向本地文件；外链表格保持原始 URL
-    let h = post.content || '<p>（无正文）</p>';
-    h = h.replace(/<a\s+[^>]*href="([^"]+)"/gi, (m, url) => {
+    let descHtml = post.content || '<p>（无正文）</p>';
+    descHtml = descHtml.replace(/<a\s+[^>]*href="([^"]+)"/gi, (matched, url) => {
       let id = null;
       for (const p of Object.values(NETDISK_PROVIDERS)) { id = p.extract(url); if (id) break; }
       const local = id && netdiskFileByUrl.get(id);
-      return local ? m.replace(url, local.rel) : m;
+      return local ? matched.replace(url, local.rel) : matched;
     });
-    return h;
+    return descHtml;
   })()}</div>
   ${extLinks.length ? `<h2>外部链接（${extLinks.length}）</h2><table><tr><th>#</th><th>链接</th><th>域名</th></tr>${extRows}</table>` : ''}
   ${buildIndexJsonBlock(index)}
@@ -1215,6 +1235,18 @@ function buildPostIndexHtml(post, creatorName, postDirDisplay, files) {
  * links: 关联渠道账号 [{id, name, service}]
  */
 /** 下载创作者头像（Pawchive og:image 模式：{webBase}/icons/{service}/{id}）；主账号 + 关联渠道各账号都要；已存在跳过（avatars/avatar-{service}-{id}.*）。返回 [{service,id,name,rel,size,exists}] 供创作者 html 展示 */
+/** 头像单次下载（abortCtl 包装——两处共用：新下载/已存在校验对比）；返回 streamOnce 结果或 {status:'err'} */
+async function avatarFetchOnce(url, tmp, abortCtl = null) {
+  try { return await streamOnce(url, tmp, 0, null, { shouldAbort: () => (abortCtl && abortCtl.shouldAbort ? abortCtl.shouldAbort() : false) }); } catch { return { status: 'err' }; } // 头像流异常→err
+}
+
+/** 头像扩展名：魔数检测（icons 响应为 octet-stream，无明确 image 类型）——webp/jpg/png/img */
+function avatarExt(head) {
+  return head.length >= 12 && head.toString('ascii', 0, 4) === 'RIFF' && head.toString('ascii', 8, 12) === 'WEBP' ? 'webp'
+    : head.length >= 2 && head[0] === MAGIC.JPEG[0] && head[1] === MAGIC.JPEG[1] ? 'jpg'
+    : head.length >= 2 && head[0] === MAGIC.PNG[0] && head[1] === MAGIC.PNG[1] ? 'png' : 'img';
+}
+
 async function downloadCreatorAvatars(plan, abortCtl = null) {
   const avatarsDir = path.join(plan.creatorDir, 'avatars');
   await fs.promises.mkdir(avatarsDir, { recursive: true });
@@ -1233,8 +1265,7 @@ async function downloadCreatorAvatars(plan, abortCtl = null) {
       const full = path.join(avatarsDir, existing);
       const url = `${CONFIG.webBase}/icons/${acc.service}/${acc.id}`;
       const tmp = path.join(avatarsDir, `${prefix}${CONFIG.tempSuffix}`);
-      let result;
-      try { result = await streamOnce(url, tmp, 0, null, { shouldAbort: () => (abortCtl && abortCtl.shouldAbort ? abortCtl.shouldAbort() : false) }); } catch { result = { status: 'err' }; }
+      const result = await avatarFetchOnce(url, tmp, abortCtl);
       if (result.status === 'ok') {
         const newHash = await fileSha256(tmp).catch(() => null);
         const oldHash = await fileSha256(full).catch(() => null);
@@ -1259,16 +1290,13 @@ async function downloadCreatorAvatars(plan, abortCtl = null) {
     }
     const url = `${CONFIG.webBase}/icons/${acc.service}/${acc.id}`;
     const tmp = path.join(avatarsDir, `${prefix}${CONFIG.tempSuffix}`);
-    let result;
-    try { result = await streamOnce(url, tmp, 0, null, { shouldAbort: () => (abortCtl && abortCtl.shouldAbort ? abortCtl.shouldAbort() : false) }); } catch { result = { status: 'err' }; }
+    const result = await avatarFetchOnce(url, tmp, abortCtl);
     if (result.status !== 'ok') { await fs.promises.rm(tmp, { force: true }).catch(() => {}); continue; }
     let size = 0;
     try { size = (await fs.promises.stat(tmp)).size; } catch { /* 0 */ }
     // 魔数检测扩展名（icons 响应为 octet-stream，无明确 image 类型）
     const head = await fs.promises.readFile(tmp).then(b => b.subarray(0, 12)).catch(() => Buffer.alloc(0));
-    const ext = head.length >= 12 && head.toString('ascii', 0, 4) === 'RIFF' && head.toString('ascii', 8, 12) === 'WEBP' ? 'webp'
-      : head.length >= 2 && head[0] === 0xff && head[1] === 0xd8 ? 'jpg'
-      : head.length >= 2 && head[0] === 0x89 && head[1] === 0x50 ? 'png' : 'img';
+    const ext = avatarExt(head);
     const final = path.join(avatarsDir, `${prefix}.${ext}`);
     await fs.promises.rename(tmp, final);
     console.log(`  [头像] ${acc.service}/${acc.id} ${fmtBytes(size)}`);
@@ -1331,7 +1359,7 @@ async function walkHtmlFiles(dir) {
   const out = [];
   const indexName = CONFIG.indexFilename;
   let entries;
-  try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); } catch { return out; }
+  try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); } catch { return out; } // 目录不可读→空列表
   for (const ent of entries) {
     if (ent.name === '.pawchive' || ent.name === '.trash' || ent.name === '.git'
       || ent.name === 'node_modules' || ent.name === '.cache') continue; // 跳过依赖/缓存目录（防误扫描大目录）
@@ -1382,23 +1410,26 @@ async function buildHashIndex(targetPath, plan) {
   for (const dir of scopeDirs) {
     for (const htmlPath of await walkHtmlFiles(dir)) {
       let html;
-      try { html = await fs.promises.readFile(htmlPath, 'utf8'); } catch { continue; }
-      const postIndex = parseIndexObj(html);
-      if (!postIndex || !Array.isArray(postIndex.files)) continue;
-      const postDir = path.dirname(htmlPath); // html 所在目录即帖子目录（迁移安全）
-      for (const f of postIndex.files) {
-        if (f.serverPath && f.rel && f.exists && !path.isAbsolute(f.rel)) {
-          const rec = { rel: path.join(postDir, f.rel), size: f.size != null ? Number(f.size) : null };
-          index.set(f.serverPath, rec);
-          // 网盘项：完整 URL 即键（http/https 前缀天然标识网盘；dropbox 规范 URL 已去 rlkey 等分享参数——同文件不同分享链接归一同复用）；旧格式（typeId:）兼容
-          if (/^https?:/i.test(f.serverPath)) index.set(f.serverPath, rec);
-          else if (/^[a-z]+:/i.test(f.serverPath) && f.netdiskId) index.set(`${f.serverPath.split(':')[0]}Id:${f.netdiskId}`, rec);
-        }
-      }
+      try { html = await fs.promises.readFile(htmlPath, 'utf8'); } catch { continue; } // 索引读失败→跳过
+      collectIndexRecords(html, path.dirname(htmlPath), index); // html 所在目录即帖子目录（迁移安全）
     }
   }
   log(`[索引] 去重扫描范围 ${scopeDirs.size} 个作者账号目录（主账号 + 关联渠道），聚合 ${index.size} 条记录`);
   return index;
+}
+
+/** 聚合单个索引 html 的 files 记录到 index Map（serverPath → {rel, size}；旧格式 typeId: 补兼容键） */
+function collectIndexRecords(html, postDir, index) {
+  const postIndex = parseIndexObj(html);
+  if (!postIndex || !Array.isArray(postIndex.files)) return;
+  for (const f of postIndex.files) {
+    if (f.serverPath && f.rel && f.exists && !path.isAbsolute(f.rel)) {
+      const rec = { rel: path.join(postDir, f.rel), size: f.size != null ? Number(f.size) : null };
+      index.set(f.serverPath, rec);
+      // 旧格式（typeId:）兼容键（新格式 https 已由上一行 serverPath 直键覆盖——不重复 set）
+      if (/^[a-z]+:/i.test(f.serverPath) && f.netdiskId) index.set(`${f.serverPath.split(':')[0]}Id:${f.netdiskId}`, rec);
+    }
+  }
 }
 
 /** 硬链接目标；失败（跨卷/NFS 不支持）回退复制，保证功能正确 */
@@ -1408,9 +1439,51 @@ async function linkOrCopy(src, dest) {
     await fs.promises.link(src, dest);
     return 'linked';
   } catch {
-    await fs.promises.copyFile(src, dest);
+    await fs.promises.copyFile(src, dest); // 硬链接失败（跨卷/NFS）→ 复制兜底
     return 'copied';
   }
+}
+
+/**
+ * 下载结果状态归一化（两处 worker 共用）：downloaded/downloaded_thumb/linked/copied → downloaded；
+ * exists/record_mismatch/thumb_exists → existed；failed:aborted → aborted；其余 → failed
+ */
+function normalizeJobStatus(raw) {
+  return ['downloaded', 'downloaded_thumb', 'linked', 'copied'].includes(raw) ? 'downloaded'
+    : ['exists', 'record_mismatch', 'thumb_exists'].includes(raw) ? 'existed'
+    : raw === 'failed:aborted' ? 'aborted'
+    : raw === 'skipped:locked' ? 'existed' // 拿不到跨进程锁——本轮跳过（不误报失败；下次运行锁释放后重查/重试）
+    : 'failed';
+}
+
+/** failed 状态构造（downloadWithDedup 多处返回用——字面量消重）：{ status: 'failed:<raw>', job } */
+function failWith(raw, job) { return { status: `failed:${raw}`, job }; }
+
+/**
+ * 单文件下载 + 事件上报（downloadRevision / downloadOnePost 两处 worker 循环体共用）：
+ * job.queued → download.started → downloadWithDedup（retry 上报）→ 状态归一化 → job.{status} → download.finished。
+ * 返回 { r, status }（调用方按需打日志/产物登记；core 事件契约字段由兼容层输出层合成，这里只发基础字段）
+ */
+async function downloadOneJob(job, hashIndex, inFlight, { tracker, emit, abortCtl = null, creator = '', targetPath = null } = {}) {
+  const done = emit || (() => {});
+  done({ type: 'job.queued', data: { creator, filename: job.filename } });
+  done({ type: 'download.started', data: { filename: job.filename, creator } });
+  let retryCount = 0;
+  const r = await downloadWithDedup(job, hashIndex, inFlight, {
+    targetPath, abortCtl,
+    onProgress: p => {
+      tracker.onProgress({ ...p, savePath: job.savePath });
+      done({ type: 'job.progress', data: { filename: job.filename, percent: p.percent ?? null, size: p.doneBytes ?? p.size ?? null, speed: p.speed ?? null, totalSize: p.total ?? null, creator: (job.post && job.post.creatorName) || creator } });
+      if (String(p.state).startsWith('retry:')) { // 下载重试状态事件（引擎重试上报，字段供上层判断）
+        done({ type: 'download.retrying', data: { filename: job.filename, retry_count: ++retryCount } });
+      }
+    },
+  });
+  const status = normalizeJobStatus(r.status);
+  tracker.onFinish(job.savePath, status);
+  done({ type: `job.${status}`, data: { filename: job.filename, size: r.size ?? null, savePath: r.savePath || job.savePath, rawStatus: r.status } }); // savePath/rawStatus：产物登记（③ delete outputs——core 只登记真下载 downloaded/downloaded_thumb；linked/copied 硬链接复用/exists 不算本任务产物；downloaded_thumb 用实际缩略图路径）
+  done({ type: 'download.finished', data: { filename: job.filename, outcome: status, status, size: r.size ?? null } }); // 下载完成事件（引擎结果上报：outcome/status/size）
+  return { r, status };
 }
 
 /**
@@ -1468,9 +1541,14 @@ async function downloadWithDedup(job, hashIndex, inFlight, opts = {}) {
     return { status: how === 'linked' ? 'linked' : 'copied', job };
   }
 
-  // ---- 5) 下载（跨进程文件锁：同 serverPath 并发多 cli 只有一个下——拿不到=别处 cli 在下 → 跳过防重复） ----
-  const lockPath = await acquireLock(job.serverPath);
-  if (!lockPath) return { status: 'exists', job }; // 跨进程锁（2026-09-29——别处正在下载——跳过）
+  // ---- 5) 下载（跨进程文件锁：同 serverPath 并发多 cli 只有一个下——拿不到=别处 cli 在下 → 等待重查防漏下） ----
+  const lockPath = await acquireLock(job.serverPath, opts.targetPath || CONFIG.dataRoot || '');
+  if (!lockPath) {
+    // 拿不到锁（别处 cli 正在下同文件）：等待 2s 重查正式文件——已出现=别处下完（exists）；没出现 → 本轮跳过返回 skipped:locked（不计成功，下次运行重试——避免拿不到锁被标 exists 导致永久漏下）
+    await new Promise(res => setTimeout(res, 2000));
+    if (await fileExists(job.savePath)) return { status: 'exists', job };
+    return { status: 'skipped:locked', job };
+  }
   const p = downloadFile(job, { ...opts, expectedSize: expected, abortCtl: opts.abortCtl || null }); // 任务 abort 级联（2026-09-29——真中断）
   inFlight.set(job.serverPath, p);
   try {
@@ -1494,7 +1572,7 @@ async function collectPostFiles(plan) {
   const out = new Map();
   for (const htmlPath of await walkHtmlFiles(plan.creatorDir)) {
     let postIndex;
-    try { postIndex = parseIndexObj(await fs.promises.readFile(htmlPath, 'utf8')); } catch { continue; }
+    try { postIndex = parseIndexObj(await fs.promises.readFile(htmlPath, 'utf8')); } catch { continue; } // 索引解析失败→跳过
     if (!postIndex || postIndex.type !== 'post' || !postIndex.postId) continue;
     const postDir = path.dirname(htmlPath);
     const files = [];
@@ -1561,58 +1639,7 @@ async function writeCreatorIndex(plan, targetPath, abortCtl = null) {
  * - 文件级：filename / doneBytes / total / percent / speed / state
  * - 整体级：filesDone / filesTotal / overallPercent / totalSpeed / 状态计数
  */
-function createProgressTracker(totalFiles, tty) {
-  const counts = { downloaded: 0, existed: 0, failed: 0 };
-  const active = new Map();       // savePath -> {filename, doneBytes, total, percent, speed, state}
-  const failedSet = new Set();
-  let lastRender = 0;
-  let prevLen = 0;
-
-  const overall = () => {
-    const done = counts.downloaded + counts.existed;
-    const pct = totalFiles ? Math.min(100, (done / totalFiles) * 100) : 0;
-    const totalSpeed = [...active.values()].reduce((s, a) => s + (a.speed || 0), 0); // 总速度=活动求和（iwara totalSpeed 同款）
-    return { done, pct, totalSpeed };
-  };
-
-  return {
-    counts, failedSet, overall,
-    /** 文件级进度事件（downloadFile.onProgress 转发） */
-    onProgress(p) {
-      const key = p.savePath || p.filename;
-      const prev = active.get(key) || {};
-      active.set(key, { ...prev, ...p });
-      if (tty) this.maybeRender();
-    },
-    /** 文件结束：status = downloaded | existed | failed */
-    onFinish(filename, status) {
-      active.delete(filename);
-      if (status === 'downloaded') counts.downloaded++;
-      else if (status === 'existed') counts.existed++;
-      else { counts.failed++; failedSet.add(filename); }
-      if (tty) this.render();
-    },
-    maybeRender() {
-      const now = Date.now();
-      if (now - lastRender >= 200) { lastRender = now; this.render(); } // 200ms 节流刷新（同 KToolBox refresh_per_second=10）
-    },
-    /** TTY 单行实时进度条（\r 刷新，非 TTY 不调用）。学 KToolBox rich 输出：图形 BarColumn + 颜色 + 速度列 */
-    render() {
-      const { done, pct, totalSpeed } = overall();
-      const barW = 18;
-      const filled = Math.round((pct / 100) * barW);
-      const bar = `\x1b[32m${'█'.repeat(filled)}\x1b[90m${'░'.repeat(barW - filled)}\x1b[0m`; // 绿=完成 灰=待下载（rich BarColumn 同款）
-      const activeLines = [...active.values()].slice(0, 2)
-        .map(a => `${String(a.filename || '').slice(0, 26)} ${(a.percent || 0).toFixed(0)}% ${fmtSpeed(a.speed)}`)
-        .join(' | ');
-      const line = `\r[下载] ${bar} ${done}/${totalFiles} ${pct.toFixed(1)}% 新${counts.downloaded} 跳${counts.existed} 败${counts.failed} 总速 ${fmtSpeed(totalSpeed)}  ${activeLines}`;
-      const pad = ' '.repeat(Math.max(0, prevLen - line.length));
-      process.stdout.write(line + pad + '\r');
-      prevLen = line.length;
-    },
-    finishLine() { process.stdout.write('\n'); }, // 结束进度条行
-  };
-}
+// createProgressTracker 已移至 progress.js（独立模块——见顶部 require；行为与原来完全一致）
 
 /**
  * 下载上下文（一次作者任务共享）：计划目录结构、全局 hash 去重索引、统计与展示状态。
@@ -1634,7 +1661,7 @@ async function initDownloadCtx(posts, meta, targetPath) {
  * 【下载帖子修订版本】参考原版 include_revisions：每个修订版下载到 帖目录/revisions/<revision_id>/（revision_dirname_format 用 {revision_id}）。
  * 复用现有下载机制（planPostFiles + downloadWithDedup + hashIndex 去重 + writeOnePostIndex 写修订版索引）。
  */
-async function downloadRevision(revision, postDir, hashIndex, { concurrency = 1, tty = false, creatorName = '', dryrun = false, onEvent } = {}) {
+async function downloadRevision(revision, postDir, hashIndex, { concurrency = 1, tty = false, creatorName = '', dryrun = false, onEvent, abortCtl = null, targetPath = null } = {}) {
   const emit = onEvent || (() => {});
   const revisionDir = path.join(postDir, CONFIG.revisionsSubdir, String(revision.revision_id));
   const jobs = planPostFiles(revision, revisionDir).map(j => ({ ...j, post: revision, postDir: revisionDir }));
@@ -1659,25 +1686,7 @@ async function downloadRevision(revision, postDir, hashIndex, { concurrency = 1,
       const idx = next++;
       if (idx >= todo.length) return;
       const job = todo[idx];
-      emit({ type: 'job.queued', data: { creator: (job.post && job.post.creatorName) || '', filename: job.filename } }); // 文件 job 入队（对齐原版 job_queued——queued_files 累计）
-      emit({ type: 'download.started', data: { filename: job.filename, creator: (job.post && job.post.creatorName) || '' } }); // 下载开始事件（引擎全流程自含，字段留给上层聚合）
-      let retryCount = 0; // download.retrying 重试计数（downloadFile 重试时累加）
-      const r = await downloadWithDedup(job, hashIndex, inFlight, {
-        abortCtl: opts.abortCtl || null, // 任务 abort 级联（2026-09-29——真中断）
-        onProgress: p => {
-          tracker.onProgress({ ...p, savePath: job.savePath });
-          emit({ type: 'job.progress', data: { filename: job.filename, percent: p.percent ?? null, size: p.doneBytes ?? p.size ?? null, speed: p.speed ?? null, totalSize: p.total ?? null, creator: (job.post && job.post.creatorName) || '' } });
-          if (String(p.state).startsWith('retry:')) { // 下载重试状态事件（引擎重试上报，字段供上层判断）
-            emit({ type: 'download.retrying', data: { filename: job.filename, retry_count: ++retryCount } });
-          }
-        },
-      });
-      const status = ['downloaded', 'downloaded_thumb', 'linked', 'copied'].includes(r.status) ? 'downloaded'
-        : ['exists', 'record_mismatch', 'thumb_exists'].includes(r.status) ? 'existed'
-        : r.status === 'failed:aborted' ? 'aborted' : 'failed'; // abort 不标 failed（对齐原版 CancelledError——不虚高 failed_files）
-      tracker.onFinish(job.savePath, status);
-      emit({ type: `job.${status}`, data: { filename: job.filename, size: r.size ?? null, savePath: r.savePath || job.savePath, rawStatus: r.status } }); // savePath/rawStatus：产物登记（③ delete outputs——core 只登记真下载 downloaded/downloaded_thumb；linked/copied 硬链接复用/exists 不算本任务产物；downloaded_thumb 用实际缩略图路径）
-      emit({ type: 'download.finished', data: { filename: job.filename, outcome: status, status, size: r.size ?? null } }); // 下载完成事件（引擎结果上报：outcome/status/size）
+      const { r, status } = await downloadOneJob(job, hashIndex, inFlight, { tracker, emit, abortCtl, targetPath, creator: (job.post && job.post.creatorName) || '' }); // 单文件下载+事件上报（两 worker 共用；abortCtl 从参数解构——修复原 opts.abortCtl 引用未定义）
       if (!tty) console.log(`  [修订${status === 'downloaded' ? '下载' : status === 'existed' ? '已存在' : '失败'}] ${job.filename}`);
     }
   });
@@ -1753,7 +1762,7 @@ async function downloadOnePost(listPost, meta, targetPath, opts = {}, shared = n
 
   // probe：该帖真实下载不落盘测速（观察 file host 限频窗口）
   if (probe) {
-    const windowMs = Number(process.env.PAWCHIVE_PROBE_MS || 5000);
+    const windowMs = Number(process.env.PAWCHIVE_PROBE_MS || CONFIG.probeWindowMs);
     for (const job of checked) {
       const r = await probeFileSpeed(job.fileUrl, windowMs);
       const limited = r.speedBps > 0 && r.speedBps < CONFIG.slowSpeedKb * 1024;
@@ -1771,7 +1780,7 @@ async function downloadOnePost(listPost, meta, targetPath, opts = {}, shared = n
       const revisions = await fetchPostRevisions(meta.service, meta.userId, detail.id || listPost.id);
       for (const rev of revisions) {
         if (!rev || rev.revision_id == null) continue;
-        await downloadRevision(rev, postDir, hashIndex, { concurrency, tty, creatorName: plan.creatorName, dryrun, onEvent: emit });
+        await downloadRevision(rev, postDir, hashIndex, { concurrency, tty, creatorName: plan.creatorName, dryrun, onEvent: emit, targetPath });
       }
     }
         // dryrun 模拟网盘下载：只解析正文网盘链接展示计划（不请求网盘网络——网盘不可访问也能看到将下载项）
@@ -1779,13 +1788,13 @@ async function downloadOnePost(listPost, meta, targetPath, opts = {}, shared = n
     if (CONFIG.downloadDrive) {
       const content = detail.content || '';
       for (const [type, p] of Object.entries(NETDISK_PROVIDERS)) {
-        const m = content.match(p.match);
-        if (m) {
+        const linkMatch = content.match(p.match);
+        if (linkMatch) {
           netdiskPlan++;
-          const id = p.extract(m[0]);
+          const id = p.extract(linkMatch[0]);
           const fbMatch = /[^/?#]+(?=\?|$)/.exec(String(id).split('#')[0]);
           const fb = fbMatch ? fbMatch[0] : `${type}_${id}`;
-          console.log(`  [网盘计划] ${type} ${fb} <- ${String(id).slice(0, 70)}${CONFIG.downloadDrive ? '' : '（网盘下载已关）'}`);
+          console.log(`  [网盘计划] ${type} ${fb}${CONFIG.downloadDrive ? '' : '（网盘下载已关）'}`); // 关键部分=文件名（idTail 末段）；完整 URL 在帖 html/正文可查——避免长 URL 截断同前缀混淆
         }
       }
       // dryrun 模拟 html 变更：下载后 html 将写入的记录（附件/图片 + 网盘成功项）与正文本地化
@@ -1813,26 +1822,7 @@ async function downloadOnePost(listPost, meta, targetPath, opts = {}, shared = n
       const idx = next++;
       if (idx >= todoJobs.length) return;
       const job = todoJobs[idx];
-      emit({ type: 'job.queued', data: { creator: '', filename: job.filename } }); // 修订文件入队（对齐原版 job_queued）
-      emit({ type: 'download.started', data: { filename: job.filename, creator: '' } }); // 下载开始事件（修订下载路径——引擎全流程自含）
-      let retryCount = 0;
-      const r = await downloadWithDedup(job, hashIndex, inFlight, {
-        abortCtl: opts.abortCtl || null, // 任务 abort 级联（2026-09-29——真中断）
-        onProgress: p => {
-          tracker.onProgress({ ...p, savePath: job.savePath });
-          emit({ type: 'job.progress', data: { filename: job.filename, percent: p.percent ?? null, size: p.doneBytes ?? p.size ?? null, speed: p.speed ?? null, totalSize: p.total ?? null, creator: (job.post && job.post.creatorName) || '' } });
-          if (String(p.state).startsWith('retry:')) {
-            emit({ type: 'download.retrying', data: { filename: job.filename, retry_count: ++retryCount } });
-          }
-        },
-      });
-      // downloaded/downloaded_thumb/linked/copied 都算完成（linked/copied=0 下载硬链接/复制复用；downloaded_thumb=缩略图回退新下载；thumb_exists=缩略图已存在→计入已存在跳过）
-      const status = ['downloaded', 'downloaded_thumb', 'linked', 'copied'].includes(r.status) ? 'downloaded'
-        : ['exists', 'record_mismatch', 'thumb_exists'].includes(r.status) ? 'existed'
-        : r.status === 'failed:aborted' ? 'aborted' : 'failed'; // abort 不标 failed（对齐原版 CancelledError——不虚高 failed_files）
-      tracker.onFinish(job.savePath, status);
-      emit({ type: `job.${status}`, data: { filename: job.filename, size: r.size ?? null, savePath: r.savePath || job.savePath, rawStatus: r.status } }); // savePath/rawStatus：产物登记（③ delete outputs——core 只登记真下载 downloaded/downloaded_thumb；linked/copied 硬链接复用/exists 不算本任务产物；downloaded_thumb 用实际缩略图路径）
-      emit({ type: 'download.finished', data: { filename: job.filename, outcome: status, status, size: r.size ?? null } });
+      const { r, status } = await downloadOneJob(job, hashIndex, inFlight, { tracker, emit, abortCtl: opts.abortCtl || null, targetPath, creator: '' }); // 单文件下载+事件上报（两 worker 共用；queued/started 原为 ''——downloadOnePost 路径 post.creatorName 走 job.progress 内联）
       // 日志带文件大小（反爬 376B 占位一目了然）
       log(`[下载] ${r.status} ${job.filename}${r.size != null ? ` ${fmtBytes(r.size)}` : ''}`);
       if (!tty) { // 非 TTY（管道/重定向/NO_COLOR）：逐行状态输出
@@ -1883,17 +1873,17 @@ async function downloadOnePost(listPost, meta, targetPath, opts = {}, shared = n
 /** 从旧帖 html 提取人读正文区（<div class="desc">…</div>，平衡 div 深度防嵌套截断） */
 function extractDescHtml(html) {
   const open = '<div class="desc">';
-  const s = String(html || '').indexOf(open);
-  if (s < 0) return null;
-  let i = s + open.length;
+  const start = String(html || '').indexOf(open);
+  if (start < 0) return null;
+  let i = start + open.length;
   let depth = 1;
-  const h = String(html);
-  while (i < h.length) {
-    const ni = h.indexOf('<div', i);
-    const nc = h.indexOf('</div>', i);
+  const htmlStr = String(html);
+  while (i < htmlStr.length) {
+    const ni = htmlStr.indexOf('<div', i);
+    const nc = htmlStr.indexOf('</div>', i);
     if (nc < 0) return null;
     if (ni >= 0 && ni < nc) { depth++; i = ni + 5; }
-    else { depth--; if (depth === 0) return h.slice(s + open.length, nc); i = nc + 6; }
+    else { depth--; if (depth === 0) return htmlStr.slice(start + open.length, nc); i = nc + 6; }
   }
   return null;
 }
@@ -1905,7 +1895,7 @@ async function refreshPostIndexLocal(listPost, plan, targetPath, hashIndex) {
   const htmlPath = path.join(postDir, CONFIG.indexFilename);
   let oldHtml = '';
   let old;
-  try { oldHtml = await fs.promises.readFile(htmlPath, 'utf8'); old = parseIndexObj(oldHtml); } catch { return false; }
+  try { oldHtml = await fs.promises.readFile(htmlPath, 'utf8'); old = parseIndexObj(oldHtml); } catch { return false; } // 无旧 html→未完成
   if (!old || !Array.isArray(old.files)) return false; // 无旧 html（人为删除）→ 未完成走下载
   const files = [];
   for (const f of old.files) {
@@ -1923,7 +1913,7 @@ async function refreshPostIndexLocal(listPost, plan, targetPath, hashIndex) {
       const rec = hashIndex && hashIndex.get(hit.key); // key=完整 URL（drive 构造 share URL、dropbox 规范 URL）——与 buildHashIndex 登记键一致
       if (!rec || !rec.rel) return false; // 正文有网盘链接但本地无对应文件（未下载/未记录）→ 未完成（走正常下载补网盘）
       let size = 0;
-      try { size = (await fs.promises.stat(rec.rel)).size; } catch { return false; }
+      try { size = (await fs.promises.stat(rec.rel)).size; } catch { return false; } // 网盘记录文件缺失→未完成
       files.push({ filename: path.basename(rec.rel), size, exists: true, serverPath: hit.key, rel: path.relative(postDir, rec.rel), kind: 'archive' });
     }
   }

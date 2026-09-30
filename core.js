@@ -291,9 +291,9 @@ function listCreators(targetPath) {
     if (!fs.existsSync(idx)) continue;
     try {
       const html = fs.readFileSync(idx, 'utf8');
-      const m = html.match(/<script id="pawchive-index"[^>]*>([\s\S]*?)<\/script>/);
-      if (!m) continue;
-      const obj = JSON.parse(m[1]);
+      const idxMatch = html.match(/<script id="pawchive-index"[^>]*>([\s\S]*?)<\/script>/);
+      if (!idxMatch) continue;
+      const obj = JSON.parse(idxMatch[1]);
       if (!obj || obj.type !== 'creator') continue;
       if (/\[object /.test(String(obj.service || '')) || /\[object /.test(String(obj.userId || ''))) continue; // 异常标识（object 字符串化）——跳过不进列表（前端无法移除的条目）
       const avatars = (obj.avatars || []).filter(a => a.exists);
@@ -366,47 +366,47 @@ function progressReducer() {
     // 注意：这里的 queued_files 不再是原版的「入队待下载数」语义——该语义前端仅此一处消费（文件统计/进度百分比分母），映射后一并成为「全部」语义。
     current: () => ({ ...p, queued_files: p.processed_files + p.failed_files }),
     apply(ev) {
-      const d = ev.data || {};
+      const data = ev.data || {};
       switch (ev.type) {
         case 'job.progress': {
-          const fn = d.filename || '';
-          if (typeof d.size === 'number') { p.transferred_bytes += Math.max(0, d.size - (lastSizes[fn] || 0)); lastSizes[fn] = d.size; } // 增量累计（非 Math.max 单值）
-          if (typeof d.totalSize === 'number') { jobTotals[fn] = d.totalSize; p.total_bytes = Object.values(jobTotals).reduce((s, t) => s + t, 0); } // total 累计和（对齐原版——非 max 单文件）
-          p.active_downloads[fn] = { filename: fn, percent: d.percent, speed: d.speed, size: d.size, totalSize: d.totalSize, creator_key: d.creator || '' };
+          const fn = data.filename || '';
+          if (typeof data.size === 'number') { p.transferred_bytes += Math.max(0, data.size - (lastSizes[fn] || 0)); lastSizes[fn] = data.size; } // 增量累计（非 Math.max 单值）
+          if (typeof data.totalSize === 'number') { jobTotals[fn] = data.totalSize; p.total_bytes = Object.values(jobTotals).reduce((s, t) => s + t, 0); } // total 累计和（对齐原版——非 max 单文件）
+          p.active_downloads[fn] = { filename: fn, percent: data.percent, speed: data.speed, size: data.size, totalSize: data.totalSize, creator_key: data.creator || '' };
           recompute();
           break;
         }
         case 'job.queued': p.queued_files++; hadJobEvents = true; break; // 文件 job 入队（对齐原版 job_queued——累计入队数）
         case 'download.retrying': { // P1-4（2026-09-30）：等待重试填充（对齐原版 task_reporter.py:165-194 填 waiting_retries）——job.* 终态 pop
-          p.waiting_retries[d.filename || ''] = { creator_key: d.creator || '', filename: d.filename || '', retry_count: d.retry_count || 0, status_code: d.status_code ?? null };
+          p.waiting_retries[data.filename || ''] = { creator_key: data.creator || '', filename: data.filename || '', retry_count: data.retry_count || 0, status_code: data.status_code ?? null };
           break;
         }
         case 'creator.started': { // P1-5（2026-09-30）：活动创作者 append（对齐原版 task_reporter.py:70-101 字符串 creator_key）
-          if (d.creator && !p.active_creators.includes(d.creator)) p.active_creators.push(d.creator);
+          if (data.creator && !p.active_creators.includes(data.creator)) p.active_creators.push(data.creator);
           break;
         }
         case 'creator.finished': { // 活动创作者 remove（对齐原版 append/remove 配对）
-          if (d.creator) p.active_creators = p.active_creators.filter(c => c !== d.creator);
+          if (data.creator) p.active_creators = p.active_creators.filter(c => c !== data.creator);
           break;
         }
         case 'job.downloaded': { // 2026-09-30 补漏：无 size 记录（html 记录 size null → job.progress totalSize null → 未计入 jobTotals）的文件下载完成——用实际 size 补进 total，transferred 不再超过 total（原 10.1MiB/9.83MiB 类显示）
           hadJobEvents = true; p.completed_files++; p.processed_files++;
-          const fnDl = d.filename || '';
+          const fnDl = data.filename || '';
           delete lastSizes[fnDl]; delete p.active_downloads[fnDl]; delete p.waiting_retries[fnDl];
-          if (jobTotals[fnDl] == null && typeof d.size === 'number') { jobTotals[fnDl] = d.size; p.total_bytes = Object.values(jobTotals).reduce((s, t) => s + t, 0); }
+          if (jobTotals[fnDl] == null && typeof data.size === 'number') { jobTotals[fnDl] = data.size; p.total_bytes = Object.values(jobTotals).reduce((s, t) => s + t, 0); }
           recompute();
           break;
         }
-        case 'job.existed': hadJobEvents = true; p.existing_files++; p.processed_files++; delete lastSizes[d.filename || '']; delete p.active_downloads[d.filename || '']; delete p.waiting_retries[d.filename || '']; recompute(); break;
-        case 'job.aborted': hadJobEvents = true; delete lastSizes[d.filename || '']; delete p.active_downloads[d.filename || '']; delete p.waiting_retries[d.filename || '']; recompute(); break; // abort 中断（不计 failed——对齐原版 CancelledError）
+        case 'job.existed': hadJobEvents = true; p.existing_files++; p.processed_files++; delete lastSizes[data.filename || '']; delete p.active_downloads[data.filename || '']; delete p.waiting_retries[data.filename || '']; recompute(); break;
+        case 'job.aborted': hadJobEvents = true; delete lastSizes[data.filename || '']; delete p.active_downloads[data.filename || '']; delete p.waiting_retries[data.filename || '']; recompute(); break; // abort 中断（不计 failed——对齐原版 CancelledError）
         case 'job.failed': hadJobEvents = true; p.failed_files++; // 失败不算已处理（2026-09-30 用户语义：已处理 = 全部 - 失败——processed 只计成功处理的文件）
-        delete lastSizes[d.filename || '']; delete p.active_downloads[d.filename || '']; delete p.waiting_retries[d.filename || '']; recompute(); break;
+        delete lastSizes[data.filename || '']; delete p.active_downloads[data.filename || '']; delete p.waiting_retries[data.filename || '']; recompute(); break;
         case 'post.completed': // 帖级聚合——仅当该帖无 job.* 事件（全部已存在 todoJobs 空）时兜底累计（cli 带 hasJobs 标记）；有 job 事件则 job.* 已计，不叠加（2026-09-29 修复双计）
-          if (!d.hasJobs) {
-            p.completed_files += d.downloaded || 0;
-            p.existing_files += d.existed || 0;
-            p.failed_files += d.failed || 0;
-            p.processed_files += (d.downloaded || 0) + (d.existed || 0); // 失败不算已处理（对齐用户语义：已处理=全部-失败）
+          if (!data.hasJobs) {
+            p.completed_files += data.downloaded || 0;
+            p.existing_files += data.existed || 0;
+            p.failed_files += data.failed || 0;
+            p.processed_files += (data.downloaded || 0) + (data.existed || 0); // 失败不算已处理（对齐用户语义：已处理=全部-失败）
           }
           break;
       }
@@ -535,20 +535,20 @@ async function downloadTask(taskId, spec, targetPath, { concurrency = 5, dryrun 
   }
 }
 /** 中止任务下载（stop/pause/删除级联——真中断：abortCtl → cli downloadFile/streamOnce kill curl） */
-function abortTask(taskId) { const c = taskAborts.get(taskId); if (c) c.abort(); }
+function abortTask(taskId) { const ctl = taskAborts.get(taskId); if (ctl) ctl.abort(); }
 
 // ---------- naming（模板映射：env 中枢 readPawchiveEnv → ktool naming 契约——统一读 env，不依赖 cli.CONFIG） ----------
 const envCompat = require('./scripts/KToolBox-env-compat.js'); // env 翻译中枢（兼容层强制读——env 相关全走它）
 function getNaming() {
-  const c = envCompat.readPawchiveEnv(); // PAWCHIVE_* → 配置对象（attachmentsSubdir/indexFilename/revisionsSubdir/模板）
+  const env = envCompat.readPawchiveEnv(); // PAWCHIVE_* → 配置对象（attachmentsSubdir/indexFilename/revisionsSubdir/模板）
   return {
-    default_output: c.dataRoot, resolved_default_output: c.dataRoot,
+    default_output: env.dataRoot, resolved_default_output: env.dataRoot,
     naming: {
-      creator_dirname_format: c.creatorDirFormat,
-      post_dirname_format: c.postDirFormat,
+      creator_dirname_format: env.creatorDirFormat,
+      post_dirname_format: env.postDirFormat,
       revision_dirname_format: '{revision_id}', // 无 revision 概念（默认）
-      filename_format: c.filenameFormat, // 顶层 filename_format（前端 normalizeNaming 读此字段——缺失会导致 draft.filename_format undefined → invalidTemplate .trim 崩）
-      post_structure: { attachments: c.attachmentsSubdir ? c.attachmentsSubdir : '.', content: c.indexFilename, external_links: 'html', file: '{id}_{}', revisions: c.revisionsSubdir },
+      filename_format: env.filenameFormat, // 顶层 filename_format（前端 normalizeNaming 读此字段——缺失会导致 draft.filename_format undefined → invalidTemplate .trim 崩）
+      post_structure: { attachments: env.attachmentsSubdir ? env.attachmentsSubdir : '.', content: env.indexFilename, external_links: 'html', file: '{id}_{}', revisions: env.revisionsSubdir },
       mix_posts: false, sequential_filename: true, sequential_filename_excludes: [], group_by_year: false, group_by_month: false,
       year_dirname_format: '{year}', month_dirname_format: '{year}-{month:02d}',
     },
