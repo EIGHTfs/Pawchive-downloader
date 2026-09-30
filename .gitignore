@@ -20,3 +20,4 @@ node_modules/
 
 # 实际运行配置（真实路径/口令，不入库；模板见 env.example）
 .env
+node_modules.orig/

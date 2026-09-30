@@ -98,6 +98,21 @@ Pawchive 文件路径是 SHA-256 内容寻址（`/<2位>/<3位>/<64位hash>.<ext
 - **完整性校验**：下载完成比对落盘大小与响应头（Content-Range/Content-Length）；**376B=反爬占位、404 错误页均删除不落盘**
 - **分页拉取**：每页 50 条（Pawchive 分页参数 `o`，stepping of 50 enforced；页间默认 1s 间隔防连发）
 - **传输策略**：curl HTTP/1.1 + 浏览器 UA + `-f`（HTTP 错误不落盘）（File host 对 Node TLS 指纹与无 UA 的 Range 请求限速；带 UA 的 HTTP/1.1 实测 9.4MB/s）
+- **KToolBox 环境兼容**：兼容 [KToolBox](https://github.com/Ljzd-PRO/KToolBox)（作者 Ljzd-PRO 的 Pawchive 下载工具箱——WebUI/CLI/Python 客户端）的**部分 `.env` 设置与 `ktoolbox.toml` 命名模板**——`scripts/KToolBox-env-compat.js` 独立兼容层（不改 cli.js），两种用法：
+  - **一次性导出（推荐，之后 cli 连续直接用）**：
+    ```
+    node scripts/KToolBox-env-compat.js --gen-env                    # 打印映射后的 PAWCHIVE_*（KEY=VALUE）到 stdout
+    node scripts/KToolBox-env-compat.js --gen-env .env               # 直接写入 cli 同目录 .env（注意：覆盖整个文件，先备份/自行合并）
+    node scripts/KToolBox-env-compat.js --gen-env ktool-mapped.env   # 写独立文件，内容手动合并进 .env
+    ```
+    跑一次拿到 `PAWCHIVE_*` 键值后，之后直接 `node cli.js <参数>` 连续使用（cli 读 `.env`）。
+  - **同参数调用 cli（每次启动时注入映射后透传，与 cli.js 参数完全一致）**：
+    ```
+    node scripts/KToolBox-env-compat.js "https://pawchive.pw/patreon/user/96944064" /path/to/downloads --post-interval 5
+    ```
+  - 指定 KToolBox 配置路径：`KTOOL_ENV=/path/to/ktool/.env KTOOLBOX_TOML=/path/to/ktoolbox.toml node scripts/KToolBox-env-compat.js --gen-env`（默认 `docs/.probe-ktoolbox/.env` 与 `docs/.probe-ktoolbox/ktoolbox.toml`）
+  - 映射项：并发 `KTOOLBOX_JOB__COUNT`→`PAWCHIVE_CONCURRENCY`、文件 host `KTOOLBOX_DOWNLOADER__FILES_NETLOC`→`PAWCHIVE_FILES_BASE`（自动补 https://）、前缀 `KTOOLBOX_DOWNLOADER__FILE_PATH_PREFIX`→`PAWCHIVE_FILES_PREFIX`、API `KTOOLBOX_API__SCHEME/NETLOC/PATH`→`PAWCHIVE_API_BASE`、命名模板 `creator_dirname_format`→`PAWCHIVE_CREATOR_DIR_FORMAT`、`post_dirname_format`→`PAWCHIVE_POST_DIR_FORMAT`、`filename_format`→`PAWCHIVE_FILENAME_FORMAT`（变量 `{creator_name}/{creator_id}/{service}/{title}/{post_id}` 双向兼容）
+  - 优先级：已有 `PAWCHIVE_*` > KToolBox 映射 > 本项目 `.env` > 默认值
 
 **硬链接迁移语义**：同卷 `mv` 保留硬链接（inode 不变）；跨设备 `mv`/普通复制会解开成独立拷贝——**数据永不失**，只是重复文件恢复各自占用空间（本项目重复文件极少）。迁移建议整目录 `mv` 或 `rsync -H`。
 
@@ -121,6 +136,10 @@ Pawchive 文件路径是 SHA-256 内容寻址（`/<2位>/<3位>/<64位hash>.<ext
 | `PAWCHIVE_FILES_PREFIX` | `/data` | 文件路径前缀 |
 | `PAWCHIVE_THUMB_BASE` | `https://img.pawchive.pw/thumbnail` | 原图 404 时缩略图回退 base |
 | `PAWCHIVE_DOWNLOAD_DRIVE` | `1` | 下载正文网盘链接（0=关；provider 可扩展） |
+| `PAWCHIVE_ANTIBOT_SIZE` | `376` | 反爬占位大小（file host bot 提示字节特征） |
+| `PAWCHIVE_404_PAGE_MAX` | `4096` | 404/错误页判定阈值（小于此大小才读头部判断） |
+| `PAWCHIVE_CURL_CONNECT_TIMEOUT` | `30` | curl 连接超时秒（下载与流式请求统一） |
+| `PAWCHIVE_WEB_BASE` | `https://pawchive.pw` | 网页基址（原链接/创作者页 href） |
 | `PAWCHIVE_TEMP_SUFFIX` | `.tmp` | 断点续传临时文件后缀 |
 | `PAWCHIVE_USER_AGENT` | Chrome 126 UA | 下载/探测请求 UA（file host 要求可识别 UA） |
 | `PAWCHIVE_TPS` | `1` | 每秒新建连接上限（反爬要求 ≤1） |
@@ -155,4 +174,6 @@ Pawchive 文件路径是 SHA-256 内容寻址（`/<2位>/<3位>/<64位hash>.<ext
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 1.0.2 | 2026-09-28 | 附件子目录开关（`PAWCHIVE_ATTACHMENTS_SUBDIR`）；dryrun 目录模拟；KToolBox 兼容层（`--gen-env` 一次性导出 + 同参数调用，env + ktoolbox.toml 命名模板映射）；migrate 双向（KToolBox→我们 + `--to-ktool` 我们→KToolBox，旧文件识别从 ktoolbox.toml 读）；KToolBox 风格 TTY 进度条（图形 Bar + 颜色）；缩略图已存在计入已存在、快速跳过帖计数；单帖统一收尾统计 |
+| 1.0.1 | 2026-09-28 | 快速跳过防漏网盘（帖 html driveLinks 字段按 provider 识别，历史帖自动补下网盘包）；缩略图已存在跳过（不重复下载）；网盘病毒确认页自动处理 + 断点续传 |
 | 1.0.0 | 2026-09-28 | 网盘下载集成（Google Drive provider 注册表可扩展、内容 sha256 跨帖去重复用、正文链接本地化）；缩略图回退；同名文件后缀；快速跳过与创作者 html 每帖刷新；worker 池式并发维持；HTTP 4xx/5xx 不重试；索引作者更新检测；全部环境变量化配置 |
