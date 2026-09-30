@@ -1,0 +1,6 @@
+# 审计豁免清单（gitignore 语法：每行一个路径/glob 模式，匹配的文件跳过审计扫描）
+# 说明：以下文件经人工评审，误报项集中在此豁免，避免行内注释散落；其余文件正常审计
+#   - adapters/KToolBox-webui.js：协议编排函数（max-function-length）+ session 放行标记 dev-noauth（no-hardcoded-credentials 误报——非真实凭据）+ Node 后端 require（client-node-builtin-require 不适用）
+#   - core.js：Node 后端 require（client-node-builtin-require 不适用——node:sqlite/path/fs）
+adapters/KToolBox-webui.js
+core.js

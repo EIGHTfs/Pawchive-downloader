@@ -21,3 +21,10 @@ node_modules/
 # 实际运行配置（真实路径/口令，不入库；模板见 env.example）
 .env
 node_modules.orig/
+
+# 前端错误上报日志（AI 读取定位用——运行产物不入库）
+.client-errors.jsonl
+# 兼容层运行产物（SQLite 数据库不入库）
+webui.db
+webui.db-wal
+webui.db-shm

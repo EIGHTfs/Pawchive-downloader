@@ -93,7 +93,7 @@ Pawchive 文件路径是 SHA-256 内容寻址（`/<2位>/<3位>/<64位hash>.<ext
 - **同名文件后缀**：同帖内同名不同内容（不同 hash）的文件自动加后缀区分（如 `image-1_4535755.png`，后缀模板由 `PAWCHIVE_FILENAME_SUFFIX_FORMAT` 配置，`{size}`=文件大小，无大小退序号），防互相覆盖
 - **缩略图回退**：原图 404（源站失效链接）时自动回退下载 `img.pawchive.pw/thumbnail/` 缩略图（文件名加 `_thumb` 标记，如 `image-1_thumb.webp`），原图恢复后重跑自动换回原图并清理旧缩略图
 - **外链表格**：帖子级 html 正文里的外部链接（http/https，一般是网盘下载地址）自动统计成表格（# / 链接 / 域名）
-- **网盘下载**：正文里的 Google Drive 链接自动下载（**provider 注册表可扩展**：mega/baidu 等加一个 provider 即可）——下载后记录进帖 html（文件列表 + 机读块），**内容 sha256 跨帖去重复用**（硬链接）；**正文里的网盘链接 a 标签本地化**（指向本地文件），外链表格保持原始 URL；**大文件病毒扫描确认页自动处理**（识别后带 confirm 重下）；**支持断点续传**（.tmp + Range 续传，确认页残留自动清理）
+- **网盘下载**：正文里的 Google Drive / Dropbox 链接自动下载（**provider 注册表可扩展**：mega/baidu 等加一个 provider 即可）——下载后记录进帖 html（文件列表 + 机读块），**内容 sha256 跨帖去重复用**（硬链接）；**正文里的网盘链接 a 标签本地化**（指向本地文件），外链表格保持原始 URL；**大文件病毒扫描确认页自动处理**（识别后带 confirm 重下）；**支持断点续传**（.tmp + Range 续传，确认页残留自动清理）
 - **TPS 限速（反爬）**：默认每秒最多 1 个新连接（`PAWCHIVE_TPS`；file host 明示要求 ≤1 req/s，超速返回 376B 占位）
 - **完整性校验**：下载完成比对落盘大小与响应头（Content-Range/Content-Length）；**376B=反爬占位、404 错误页均删除不落盘**
 - **分页拉取**：每页 50 条（Pawchive 分页参数 `o`，stepping of 50 enforced；页间默认 1s 间隔防连发）

@@ -78,6 +78,14 @@ const extLinkNames = ktoolPostStruct.external_links ? [ktoolPostStruct.external_
 const ktoolOldFileSet = new Set(['post.json', 'index.html', ...contentNames, ...extLinkNames]);
 const attSub = ktoolPostStruct.attachments || 'attachments'; // KToolBox 附件子目录名（反向迁移用）
 
+/** 字节级截断（文件名字节限制 255——日文等多字节标题会超，Buffer 90 字节安全截断防 ENAMETOOLONG） */
+function truncPath(s) {
+  const b = Buffer.from(String(s));
+  if (b.length <= 90) return String(s);
+  const cut = b.subarray(0, 90).toString('utf8').replace(/\uFFFD/g, ''); // 避免切坏 UTF-8 多字节
+  return cut || String(s).slice(0, 30);
+}
+
 /** HTML 剥标签 → 纯文本（反向迁移写 KToolBox content 文件用） */
 function stripHtml(html) {
   return String(html || '')
@@ -189,7 +197,7 @@ function runMigration() {
     if (remain.length === 0) {
       planLines.push(`  [清目录] ${path.relative(root, dir)}`);
       if (!flags.dryrun) {
-        const t = path.join(trashDir, `attachments-${path.basename(parent)}-${ts}`);
+        const t = path.join(trashDir, `attachments-${truncPath(path.basename(parent))}-${ts}`); // 帖标题可能超长（日文长标题多字节）→ 字节级截断防 ENAMETOOLONG
         fs.mkdirSync(path.dirname(t), { recursive: true });
         fs.renameSync(dir, t);
         stats.dirRemoved++;
@@ -215,7 +223,7 @@ function runMigration() {
   for (const old of oldFiles) {
     planLines.push(`  [删旧] ${path.relative(root, old)}`);
     if (!flags.dryrun) {
-      const t = path.join(trashDir, `${path.basename(old)}-${ts}-${path.basename(path.dirname(old))}`);
+      const t = path.join(trashDir, `${path.basename(old)}-${ts}-${truncPath(path.basename(path.dirname(old)))}`); // 帖目录名字节级截断防 ENAMETOOLONG
       fs.mkdirSync(path.dirname(t), { recursive: true });
       fs.renameSync(old, t);
       stats.oldRemoved++;
