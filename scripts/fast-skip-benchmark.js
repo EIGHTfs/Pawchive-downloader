@@ -5,7 +5,7 @@
 //   1. 正文网盘重建：hashIndex 有 share URL 键（本地有网盘文件）→ 刷新 true + files 补网盘项 + html 重写
 //   2. 未完成回退：正文有网盘链接但 hashIndex 无记录 → false（回退正常下载补网盘）
 //   3. 跳过条件（纯逻辑）：完整无网盘 → 入 completedPosts；有网盘/未完整 → 不入
-//   4. 单帖不跳过（设计）：meta.mode==='post' 排除（单帖=用户明确处理该帖；跳过仅创作者批量模式）
+//   4. 单帖不跳过（设计）：meta.mode==='post' 排除（单帖=显式处理该帖；跳过仅创作者批量模式）
 // 安全：场景 1 会改写测试帖 html（模拟网盘记录写入）——脚本先备份、断言后恢复原文，不污染真实数据。
 const path = require('path');
 const fs = require('fs');
@@ -71,7 +71,7 @@ function readPostObj(htmlPath) {
   assert('3. 跳过条件: 0 文件帖 → 不入', mkSet({ postId: 4, relDir: 'd', fileCount: 0, downloaded: 0, driveLinks: false }).size === 0);
 
   // ---- 场景 4：单帖模式不跳过（设计——代码 meta.mode !== 'post' 排除）----
-  assert('4. 单帖不跳过: mode===\'post\' 时 completedPosts 构建被排除（设计注释已写明）', true, '用户指定单帖=明确处理该帖；跳过仅创作者批量模式');
+  assert('4. 单帖不跳过: mode===\'post\' 时 completedPosts 构建被排除（设计注释已写明）', true, '单帖=显式处理该帖；跳过仅创作者批量模式');
 
   const fails = results.filter(r => !r.pass);
   console.log(`\n基准测试: ${results.length - fails.length}/${results.length} 通过`);

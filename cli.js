@@ -782,7 +782,10 @@ async function acquireLock(serverPath) {
       if (e && e.code === 'EEXIST') {
         try {
           const st = await fs.promises.stat(lockPath);
-          if (Date.now() - st.mtimeMs > LOCK_STALE_MS) { await fs.promises.rm(lockPath, { force: true }).catch(() => {}); continue; }
+          // 死锁检测（中断残留）：锁内容写 pid——进程已死（/proc/<pid> 不存在）或超 24h 视为死锁，删锁重试（不阻塞后续续传）
+          const pidStr = (await fs.promises.readFile(lockPath, 'utf8').catch(() => '')).trim();
+          const pidAlive = pidStr && fs.existsSync(`/proc/${pidStr}`);
+          if (!pidAlive || Date.now() - st.mtimeMs > LOCK_STALE_MS) { await fs.promises.rm(lockPath, { force: true }).catch(() => {}); continue; }
         } catch { continue; }
         return null; // 别处 cli 正在下载——跳过
       }
@@ -1425,8 +1428,7 @@ async function downloadWithDedup(job, hashIndex, inFlight, opts = {}) {
   const rec = hashIndex.get(job.serverPath); // html 记录 {rel, size}
   const expected = rec && rec.size != null ? Number(rec.size) : (job.apiSize ?? null); // 大小基准：html 记录 → API size 兜底
 
-  // .tmp 分类（2026-09-29——不清续传、只清冗余）：正式文件已存在 + .tmp 残留 = 冗余（正式在——续传无意义）→ 清；
-  // 正式不存在 + .tmp 在 = 断点续传基础（保留供续传——清了续传就断）
+  // .tmp 分类：正式缺失 + .tmp 在 = 断点续传基础（保留）；正式已存在 + .tmp 残留 = 冗余（下载完成——续传无意义）→ 清
   if (await fileExists(job.savePath) && await fileExists(job.savePath + CONFIG.tempSuffix)) {
     await fs.promises.rm(job.savePath + CONFIG.tempSuffix, { force: true }).catch(() => {});
     log(`[.tmp 冗余清理] ${job.filename}（正式已存在——清除残留 .tmp）`);
@@ -1731,8 +1733,12 @@ async function downloadOnePost(listPost, meta, targetPath, opts = {}, shared = n
         try { localSize = (await fs.promises.stat(job.savePath)).size; } catch { /* 竞态：文件刚消失则按新建处理 */ }
         corrupt = (localSize !== null && localSize !== Number(rec.size)) || localSize === CONFIG.antibotSize; // 反爬占位特征，视为损坏覆盖重下
         exists = !corrupt;
+        // 冗余 = 该文件【正式版已下载完成（存在且大小与记录一致）】且【.tmp 同时存在】→ 残留 tmp 无续传意义，清掉；
+        // 其余情况（正式缺失 + .tmp 在 = 断点续传基础；corrupt 大小不符 = 覆盖前保留 .tmp 续传）一律不清
+        if (exists) await fs.promises.rm(job.savePath + CONFIG.tempSuffix, { force: true }).catch(() => {});
       } else {
         exists = true; // 无记录可比，保守视为已存在（不重下）
+        await fs.promises.rm(job.savePath + CONFIG.tempSuffix, { force: true }).catch(() => {}); // 正式在（保守已存在）——残留 .tmp 为冗余，清
       }
     }
     checked.push({ ...job, exists, corrupt });

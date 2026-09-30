@@ -240,8 +240,11 @@ Pawchive 文件路径是 SHA-256 内容寻址（`/<2位>/<3位>/<64位hash>.<ext
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
-| 1.0.4 | 2026-09-30 | 架构边界文档化（README 新增「架构边界」章节：cli 独立引擎 vs core 兼容层 vs adapter 翻译，依赖单向、事件契约边界、改动纪律）；cli.js 注释措辞清理（残留「前端消费/兼容层」措辞改为引擎语义，6 处）；scripts/clean-bot.js require 路径修复（`./cli.js`→`../cli.js`，脚本原无法运行） |
-| 1.0.3 | 2026-09-29 | WebUI 兼容层功能批次：auto-sync 真实实现（计划 CRUD/定时器/run-pause-resume——自动按作者下载）；创作者搜索（fetchAllCreators 缓存 7 天）；naming 保存写配置（env-compat 双向翻译）；①层前端错误注入（error-reporter → .client-errors.jsonl）；DEBUG 启动端点自检（PAWCHIVE_WEB_DEBUG=1）；作者软删 removed 机制；修订下载默认开；queued_files 对齐原版；legacy-migration 真实迁移；任务 spec.creators 双格式解析；契约扫描工具（contract-scan）；docs 全面重写（设计文档按代码逐节对齐）｜ **行为对齐批次（对齐 Python 原版）**：任务创建去重（同作者 ACTIVE → 409+current_task_id）、任务真中断（abortCtl 级联——stop/pause/删除真正停下载 + 终态不被覆盖）、progressReducer 累计统计（transferred 累计/speed 总速度/total/eta/active 清理）、强校验模式（PAWCHIVE_STRICT_VERIFY——sha256 vs serverPath——不符优先修复重下）、跨进程文件锁（同文件多 cli 防重复下载）、.tmp 分类（保留续传/清冗余）、断点续传 fsync、前端 P1（搜索补 service/user/任务编辑方案 A/MCP 空对齐） |
-| 1.0.2 | 2026-09-28 | 附件子目录开关（`PAWCHIVE_ATTACHMENTS_SUBDIR`）；dryrun 目录模拟；KToolBox 兼容层（`--gen-env` 一次性导出 + 同参数调用，env + ktoolbox.toml 命名模板映射）；migrate 双向（KToolBox→我们 + `--to-ktool` 我们→KToolBox，旧文件识别从 ktoolbox.toml 读）；KToolBox 风格 TTY 进度条（图形 Bar + 颜色）；缩略图已存在计入已存在、快速跳过帖计数；单帖统一收尾统计 |
-| 1.0.1 | 2026-09-28 | 快速跳过防漏网盘（帖 html driveLinks 字段按 provider 识别，历史帖自动补下网盘包）；缩略图已存在跳过（不重复下载）；网盘病毒确认页自动处理 + 断点续传 |
-| 1.0.0 | 2026-09-28 | 网盘下载集成（Google Drive provider 注册表可扩展、内容 sha256 跨帖去重复用、正文链接本地化）；缩略图回退；同名文件后缀；快速跳过与创作者 html 每帖刷新；worker 池式并发维持；HTTP 4xx/5xx 不重试；索引作者更新检测；全部环境变量化配置 |
+| v0.8.0 | 2026-09-30 | 文档整理批次：14 份审计/排查/调查/核对文档合并升级为 `docs/调查审计与行为核对-权威指南.md`（权威现状速查 22 项已修复 + 5 项仍开放 + 历史来源索引可追溯）；新增 3 份设计指南（`行为对齐-设计指南`/`KToolBox-bugfix-PR设计指南`/`KToolBox前端接入-设计指南`）；cli.js 跨进程锁死锁检测增强（锁读 pid → /proc/<pid> 存活判定，进程死立即解锁而非等 24h 过期）；fast-skip-benchmark 措辞清理；docs 旧调查文档移除 |
+| v0.7.0 | 2026-09-30 | CLI 网盘链接重构 + 本地索引刷新（extractContentLinks/matchNetdiskLink/buildNetdiskFileMap 提取复用、refreshPostIndexLocal 无网络本地刷新帖索引）+ fast-skip-benchmark 基准测试 |
+| v0.6.0 | 2026-09-30 | 收尾批次：任务调度器+rerun（startTaskScheduler/scheduleTick 排队/blocked）、auto-sync checkpoint 增量、delete outputs 安全清理、统计语义（已处理/全部）、事件中文 message、0B transferred/卡 running 修复、断链修复（attempt seq/scheduleTick 透传 spec/waiting_retries/active_creators/事件契约移至兼容层）、架构边界文档化、等待重试面板、已传输超总量修复 |
+| v0.5.0 | 2026-09-29 | 行为对齐批次一+二（合并）：.tmp 分类处理、progressReducer 累计统计、任务创建去重 409、强校验模式、任务真中断 abortCtl、跨进程文件锁、前端 P1 数据修复、P2 端点补全、事件类型对齐/节流/快照/presentation、孤儿 curl 防护、API 第三轮 |
+| v0.4.0 | 2026-09-29 | 兼容层功能完整：posts 详情代理、env 翻译中枢（KToolBox-env-compat 双向）、创作者搜索（fetchAllCreators 缓存 7 天）、naming 保存写配置、config schema 26 字段、auto-sync 真实实现、①层前端错误捕获、全站 null.values 修复、前端修复 bundle 替换 |
+| v0.3.0 | 2026-09-28/29 | 协议切换兼容层完成：server/core/adapters 端点全覆盖（349 行 adapter）+ 作者头像下载 + webui-static 前端静态入库 + 测试三件套（webapi/contract-check/e2e-webui） |
+| v0.2.0 | 2026-09-28 | 引擎成熟：快速跳过防漏网盘、附件子目录开关、dryrun 目录模拟、KToolBox 兼容层雏形（--gen-env + env-compat）、migrate 双向迁移、TTY 图形进度条、缩略图已存在跳过、全量审计优化 |
+| v0.1.0 | 2026-09-28 | 初始 CLI 引擎：Pawchive 全平台作品下载（并行下载/双级 html 索引/反爬防御/网盘集成/断点续传） |
