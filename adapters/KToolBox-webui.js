@@ -73,8 +73,14 @@ function taskRecord(t) {
     spec, presentation: t.presentation || null,
     automatic_origin: null, position: t.position || 0, revision: t.revision || 1,
     // progress 补全 TaskProgress 默认结构（active_creators 等数组/对象——前端任务列表/详情读 .length——缺失 undefined.length 崩——P0）
-    progress: { queued_files: 0, processed_files: 0, completed_files: 0, existing_files: 0, failed_files: 0, transferred_bytes: 0, total_bytes: null, speed_bps: 0, eta_seconds: null, active_creators: [], active_downloads: {}, ...(t.progress || {}) },
-    error: t.error || null, failure: null, blocked_by: null,
+    progress: (() => { // 2026-09-30 后端映射（不改前端）：同 progressReducer.current()——queued_files 字段值映射为「全部」（processed+failed）。
+      // 自定义语义（与 KToolBox 原版不同，用户决策）：已处理 = 全部 - 失败（失败不算已处理），前端「文件」读 processed/queued 即显示「已处理/全部」；
+      // 这里读 DB 落库的 progress（taskRecord 输出层），与 SSE 事件内嵌快照（core current() 映射）两处保持一致。
+      const pr = { queued_files: 0, processed_files: 0, completed_files: 0, existing_files: 0, failed_files: 0, transferred_bytes: 0, total_bytes: null, speed_bps: 0, eta_seconds: null, active_creators: [], active_downloads: {}, ...(t.progress || {}) };
+      pr.queued_files = (pr.processed_files || 0) + (pr.failed_files || 0);
+      return pr;
+    })(),
+    error: t.error || null, failure: null, blocked_by: t.blocked_by || null, // 2026-09-29 调度器：blocked 阻塞源任务 id（从 DB 读——前端任务列表显示"被阻塞"）
     created_at: t.created_at, updated_at: t.updated_at,
   };
 }
@@ -218,6 +224,7 @@ async function handle(method, pathname, url, req, res, core) {
       ['job.download_drive', 'PAWCHIVE_DOWNLOAD_DRIVE', 'job', '下载正文网盘链接', 'Google Drive（provider 可扩展）', 'boolean', env.PAWCHIVE_DOWNLOAD_DRIVE !== '0'],
       ['job.attachments_subdir', 'PAWCHIVE_ATTACHMENTS_SUBDIR', 'job', '附件子目录', '空=帖根目录；设 attachments 等', 'string', C.attachmentsSubdir],
       ['job.index_filename', 'PAWCHIVE_INDEX_FILENAME', 'job', '详情索引文件名', '帖目录索引 html 名', 'string', C.indexFilename],
+      ['job.write_creator_index', 'PAWCHIVE_WRITE_CREATOR_INDEX', 'job', '写创作者索引', 'pawchive-index.html 决定去重/网盘下载——强制启用，开关仅供显示（代码不读取）', 'boolean', env.PAWCHIVE_WRITE_CREATOR_INDEX !== '0'],
       // api（Pawchive API）
       ['api.base_url', 'PAWCHIVE_API_BASE', 'api', 'API 地址', 'Pawchive API base（含 /api/v1）', 'string', env.PAWCHIVE_API_BASE || 'https://pawchive.pw/api/v1'],
       ['api.retry_times', 'PAWCHIVE_RETRY_TIMES', 'api', '请求重试次数', 'API 失败重试', 'integer', env.PAWCHIVE_RETRY_TIMES || 3],
@@ -575,9 +582,17 @@ async function handle(method, pathname, url, req, res, core) {
     }
     const taskId = `task-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     const dryrun = !!(spec.dryrun || body.dryrun); // 测试模式：dryrun=1 只生成下载计划不真实落盘（前端/对比脚本测试用——不污染真实数据目录）
+    // 2026-09-29 调度器：创建入队（queued）——由调度器按全局并发上限启动；同 service+creator 已有 ACTIVE 非 sync 任务 → blocked + blocked_by（对齐原版 task_scheduler 资源冲突）
+    let conflict = null;
+    if (service && creatorId) {
+      conflict = core.listTasks().map(taskRecord).find(t => core.ACTIVE.has(t.status) && t.id !== taskId && t.spec && t.spec.service === service && String(t.spec.creator_id) === String(creatorId));
+    }
     core.createTask({ id: taskId, spec: { kind: spec.kind || 'download', service, creator_id: creatorId, post_id: postId, post: url, output: targetPath, dryrun, creators: (spec.kind === 'sync' && spec.creators) || (spec.kind === 'sync' && service ? [{ service, creator_id: creatorId }] : undefined) } });
-    core.downloadTask(taskId, { service, creator_id: creatorId, post_id: postId, url }, targetPath, { concurrency: Number(process.env.PAWCHIVE_CONCURRENCY) || 5, dryrun })
-      .catch(err => console.error(`[task ${taskId}] 执行异常: ${err && err.message || err}`));
+    if (conflict) { // 资源冲突 → blocked（阻塞源记录——前端任务列表显示"被阻塞"；调度器在阻塞源结束后自动转 queued 启动）
+      core.db.prepare('UPDATE tasks SET status = ?, blocked_by = ?, updated_at = ? WHERE id = ?').run('blocked', conflict.id, new Date().toISOString(), taskId);
+    } else {
+      core.scheduleTick(); // 无冲突 → 立即触发调度（queued 任务按全局并发上限启动；不空转等 60s tick）
+    }
     return json(res, 201, taskRecord(core.getTask(taskId)));
   }
   {
@@ -586,7 +601,13 @@ async function handle(method, pathname, url, req, res, core) {
       const t = core.getTask(p.task_id);
       if (!t) return json(res, 404, { detail: 'task not found' });
       if (method === 'GET') return json(res, 200, taskRecord(t));
-      if (method === 'DELETE') { core.abortTask(p.task_id); core.db.prepare('DELETE FROM tasks WHERE id=?').run(p.task_id); return json(res, 200, { ok: true }); } // 2026-09-29 删除前 abort 下载（真中断——后台不再继续）
+      if (method === 'DELETE') { core.abortTask(p.task_id); // 2026-09-29 删除前 abort 下载（真中断——后台不再继续）
+        const deleteOutput = url.searchParams.get('delete_output') === 'true' || url.searchParams.get('delete_output') === '1'; // ③ delete outputs：前端删除对话框勾选——只删本任务安全产物（存在+未变）
+        let cleanup = null;
+        if (deleteOutput) cleanup = core.cleanupTaskArtifacts(p.task_id);
+        core.db.prepare('DELETE FROM tasks WHERE id=?').run(p.task_id);
+        core.removeTaskArtifacts(p.task_id);
+        return json(res, 200, { ok: true, ...(cleanup ? { removable_files: cleanup.removable_files, removable_bytes: cleanup.removable_bytes } : {}) }); }
       if (method === 'PATCH') { const body = await readBody(req).catch(() => ({})); if (body.status) core.updateTaskStatus(p.task_id, body.status);
         if (body.spec) { // P1-2 任务编辑方案 A 修订（2026-09-29 子代理核对）：对齐原版——RUNNING 才拒改（queued/blocked/paused/stopped 可编辑）
           if (t.status === 'running') return json(res, 409, { detail: '任务运行中不可编辑' });
@@ -608,16 +629,26 @@ async function handle(method, pathname, url, req, res, core) {
     const p = matchPath(pathname, '/api/v1/tasks/{task_id}/attempts');
     if (p && method === 'GET') return json(res, 200, core.listAttempts(p.task_id));
   }
-  // 任务控制（run/stop/pause/resume/rerun）——状态标记（cli 内嵌下载无中断接口，真实取消 TODO）
+  // 任务控制（run/stop/pause/resume/rerun）——2026-09-29 调度器：run/resume/rerun 转 queued 由调度器按全局并发上限启动（不再直接 running——防超并发）；rerun 清进度真实重跑
   for (const action of ['run', 'stop', 'pause', 'resume', 'rerun', 'cleanup-preview']) {
     const p = matchPath(pathname, `/api/v1/tasks/{task_id}/${action}`);
     if (p) {
-      if (action === 'cleanup-preview') return json(res, 200, { task_id: p.task_id, artifacts: [], removable_files: 0, removable_bytes: 0 }); // 功能空对齐：无 artifact 清理（返回空预览，前端删除对话框不崩）
+      if (action === 'cleanup-preview') { // ③ delete outputs 安全清理预览：只列可安全删除的产物（本任务本次真正落盘、存在、大小未变）——原版 tasks.md:37 preview 语义
+        const removable = core.previewTaskArtifacts(p.task_id);
+        return json(res, 200, { task_id: p.task_id, artifacts: removable, removable_files: removable.length, removable_bytes: removable.reduce((s, a) => s + a.size, 0) });
+      }
       const t = core.getTask(p.task_id);
       if (!t) return json(res, 404, { detail: 'task not found' });
-      const map = { run: 'running', stop: 'stopped', pause: 'paused', resume: 'running', rerun: 'queued' };
-      if (map[action]) core.updateTaskStatus(p.task_id, map[action]);
+      const map = { run: 'queued', stop: 'stopped', pause: 'paused', resume: 'queued', rerun: 'queued' }; // run/resume 转 queued（调度器启动）；stop/pause 保持终态/暂停
+      if (action === 'rerun') { // 真实重跑：清空进度/错误/失败记录 + 旧 attempts（sequence=1 可重建——否则 UNIQUE 冲突）+ revision+1（已存在文件走 hash 去重——不会重复下载）
+        core.db.prepare('UPDATE tasks SET progress_json = ?, error = NULL, failure_json = NULL, revision = revision + 1, status = ?, updated_at = ? WHERE id = ?')
+          .run('{}', 'queued', new Date().toISOString(), p.task_id);
+        core.db.prepare('DELETE FROM task_attempts WHERE task_id = ?').run(p.task_id); // 2026-09-30 rerun bug 修复：旧 attempt(seq=1) 不清 → 重跑 startAttempt(1) UNIQUE 冲突 → 任务卡 running
+      } else if (map[action]) {
+        core.updateTaskStatus(p.task_id, map[action]);
+      }
       if (action === 'stop' || action === 'pause' || action === 'cancel') core.abortTask(p.task_id); // 2026-09-29 真中断：stop/pause/取消级联 abort 下载（cli kill curl——不再删了还在下载）
+      if (map[action] === 'queued') core.scheduleTick(); // 入队后立即触发调度（不等 60s tick）
       core.eventStore.publish({ event_type: 'task.progress', task_id: p.task_id, data: { phase: action } });
       return json(res, 200, taskRecord(core.getTask(p.task_id)));
     }

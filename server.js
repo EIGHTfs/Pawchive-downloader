@@ -97,6 +97,7 @@ server.listen(PORT, HOST, () => {
   console.log(`[web] Pawchive WebUI 兼容层 http://${HOST}:${PORT}（协议: ${protocolName}，DB: ${core.db ? path.basename(process.env.PAWCHIVE_WEB_DB || 'webui.db') : '-'}）`);
   sweepOrphanCurls(); // 孤儿下载 curl 清扫（上一轮 server 崩溃/被杀遗留的下载子进程——kill -9 无法被 cli 退出钩子拦截，此兜底 TERM 掉）
   if (typeof core.startAutoSyncScheduler === 'function') core.startAutoSyncScheduler(core.CONFIG.dataRoot || ''); // 自动同步调度（计划到期触发 sync 任务）
+  if (typeof core.startTaskScheduler === 'function') core.startTaskScheduler(core.CONFIG.dataRoot || '', { maxActive: Number(process.env.PAWCHIVE_CONCURRENCY) || 5 }); // 任务调度器（queued/blocked 排队 + 全局并发上限）
   if (DEBUG) startupSelfCheck(); // debug 开关——启动端点自检（写日志）
 });
 

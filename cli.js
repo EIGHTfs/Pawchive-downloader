@@ -93,7 +93,9 @@ const CONFIG = {
   // 附件子目录：env 里空 / "." / "/" 三者等价 = 帖根目录（不建子目录）；设 attachments 等可配
   attachmentsSubdir: ((v) => (v && v !== '.' && v !== '/' ? v : ''))(process.env.PAWCHIVE_ATTACHMENTS_SUBDIR || ''),
   downloadDrive: process.env.PAWCHIVE_DOWNLOAD_DRIVE !== '0', // 下载正文里的 Google Drive 网盘链接（默认开；'0'=关）
+  fastSkip: process.env.PAWCHIVE_FAST_SKIP === '1', // 用户级 html 快速跳过已完整帖（默认关——历史帖全量 getPost 检查，补漏录的外链/网盘）
   includeRevisions: process.env.PAWCHIVE_INCLUDE_REVISIONS !== '0', // 下载帖子修订版本（默认开——内容 sha256 硬链接去重不占额外空间；'0'=关；参考原版 include_revisions：每修订版下到 帖目录/<revisionsSubdir>/<revision_id>/）
+  writeCreatorIndex: true, // 创作者级 pawchive-index.html 写入：强制启用（pawchive-index.html 决定去重/网盘下载功能，不提供关闭）；PAWCHIVE_WRITE_CREATOR_INDEX 仅供上层读取写入状态
   revisionsSubdir: process.env.PAWCHIVE_REVISIONS_SUBDIR || 'revisions', // 修订版本子目录名（默认 'revisions'——原版 post_structure.revisions 同源；naming 响应/下载共用）
   webBase: process.env.PAWCHIVE_WEB_BASE || 'https://pawchive.pw', // 网页基址（原链接/创作者页 href）
   antibotSize: Number(process.env.PAWCHIVE_ANTIBOT_SIZE) || 376, // 反爬占位大小（file host bot 提示字节特征）
@@ -618,14 +620,15 @@ const NETDISK_PROVIDERS = {
     match: /drive\.google\.com\/(?:file\/d\/[a-zA-Z0-9_-]+|open\?id=[a-zA-Z0-9_-]+)/,
     extract: driveIdOf,
     downloadUrl: id => `https://drive.usercontent.google.com/download?id=${id}&export=download`,
+    share: id => `https://drive.google.com/file/d/${id}/view`, // 记录/复用用完整分享 URL（与正文链接同构）
     key: id => `drive:${id}`,
   },
   // Dropbox：分享链接（scl/fi 新格式或 s/ 旧格式）→ dl=1 强制下载（最终 host dl.dropboxusercontent.com 支持 Range 断点续传）
   dropbox: {
     match: /https?:\/\/[^\s"'<>]*dropbox\.com\/(?:scl\/fi\/[a-zA-Z0-9_-]+|s\/[a-zA-Z0-9_-]+)[^\s"'<>]*/,
-    extract: u => { // 规范 id = 完整分享 URL（解码 HTML 实体 &amp;→&、保留 rlkey、去 dl 参数——与正文链接一致，外链本地化可匹配）
+    extract: u => { // 规范 URL：解码 HTML 实体、去锚点、去分享/下载参数（dl/rlkey/st/e）——同文件不同分享链接归一到同一 URL 作去重/复用键
       const url = String(u || '').replace(/&amp;/g, '&').split('#')[0];
-      return url.replace(/[?&]dl=\d+/, '');
+      return url.replace(/[?&]dl=\d+/g, '').replace(/[?&](?:rlkey|st|e)=[^&]+/g, '').replace(/[?&]$/, '');
     },
     downloadUrl: id => `${id}${id.includes('?') ? '&' : '?'}dl=1`, // 强制下载
     key: id => `dropbox:${id}`,
@@ -636,7 +639,7 @@ const NETDISK_PROVIDERS = {
 };
 
 /** 下载正文里的网盘链接（遍历已注册 provider）到帖子目录；文件名取响应头原始名。
- * 返回记录项 [{filename, size, exists, serverPath:'<type>:<hash>', netdiskId, rel, savePath}]——并入帖 html files[] 展示。 */
+ * 返回记录项 [{filename, size, exists, serverPath(网盘=完整网址), rel, savePath}]——并入帖 html files[] 展示。 */
 async function downloadNetdiskFiles(detail, postDir, hashIndex) {
   const out = [];
   if (!CONFIG.downloadDrive) return out;
@@ -645,8 +648,8 @@ async function downloadNetdiskFiles(detail, postDir, hashIndex) {
     const ids = [...new Set((content.match(p.match) || []).map(u => p.extract(u)).filter(Boolean))];
     for (const id of ids) {
       // 跨帖复用：hashIndex 里该网盘 ID 已下载（同链接/同内容）→ 硬链接/复制复用，不重复下载
-      const idKey = `${type}Id:${id}`;
-      const rec = hashIndex && hashIndex.get(idKey);
+      const urlKey = p.share ? p.share(id) : id; // 记录/复用统一键 = 完整网盘 URL（drive 构造分享 URL、dropbox 即规范 URL；http/https 前缀天然标识网盘）
+      const rec = hashIndex && hashIndex.get(urlKey);
       if (rec && rec.rel && await fileExists(rec.rel)) {
         const srcName = path.basename(rec.rel);
         const final = path.join(postDir, srcName);
@@ -657,7 +660,7 @@ async function downloadNetdiskFiles(detail, postDir, hashIndex) {
         } else {
           console.log(`  [网盘已存在] ${srcName}`); // 本帖已下载（复用源即本帖或目标已存在）
         }
-        out.push({ filename: srcName, size: rec.size ?? null, exists: true, serverPath: `${type}:${id}`, netdiskId: id, rel: path.relative(postDir, final), savePath: final });
+        out.push({ filename: srcName, size: rec.size ?? null, exists: true, serverPath: urlKey, rel: path.relative(postDir, final), savePath: final });
         continue;
       }
       const url = p.downloadUrl(id);
@@ -707,8 +710,8 @@ async function downloadNetdiskFiles(detail, postDir, hashIndex) {
         await fs.promises.rm(netdiskTmp, { force: true }).catch(() => {});
         console.log(`  [网盘已存在] ${name}`);
         const hash = await fileSha256(final).catch(() => null);
-        if (hash && hashIndex) { hashIndex.set(`${type}:${hash}`, { rel: final, size }); hashIndex.set(idKey, { rel: final, size }); }
-        out.push({ filename: name, size, exists: true, serverPath: hash ? `${type}:${hash}` : `${type}:${id}`, netdiskId: id, rel: path.relative(postDir, final), savePath: final });
+        if (hash && hashIndex) { hashIndex.set(`sha256:${hash}`, { rel: final, size }); hashIndex.set(urlKey, { rel: final, size }); }
+        out.push({ filename: name, size, exists: true, serverPath: urlKey, rel: path.relative(postDir, final), savePath: final });
         continue;
       }
       await fs.promises.rename(netdiskTmp, final);
@@ -716,8 +719,8 @@ async function downloadNetdiskFiles(detail, postDir, hashIndex) {
       log(`[下载] 网盘 ${name}（${type}:${id}，${fmtBytes(size)}）`);
       // 内容 hash 作去重键（跨帖同内容复用）+ 网盘 ID 键（同链接复用）
       const hash = await fileSha256(final).catch(() => null);
-      if (hash && hashIndex) { hashIndex.set(`${type}:${hash}`, { rel: final, size }); hashIndex.set(idKey, { rel: final, size }); }
-      out.push({ filename: name, size, exists: true, serverPath: hash ? `${type}:${hash}` : `${type}:${id}`, netdiskId: id, rel: path.relative(postDir, final), savePath: final });
+      if (hash && hashIndex) { hashIndex.set(`sha256:${hash}`, { rel: final, size }); hashIndex.set(urlKey, { rel: final, size }); }
+      out.push({ filename: name, size, exists: true, serverPath: urlKey, rel: path.relative(postDir, final), savePath: final });
     }
   }
   return out;
@@ -830,6 +833,7 @@ async function downloadFile(job, { onProgress = null, expectedSize: optExpected 
         // 【断点续传】file host 带 UA 后 Range 续传正常（实测带浏览器头 9.4MB/s）：
         // 失败重试保留 .tmp 并从断点续传（重新 stat .tmp 大小 → curl -C 续传）。
         if (attempt < CONFIG.downloadRetryTimes && shouldRetry(result.status)) {
+          if (onProgress) onProgress({ filename: job.filename, state: `retry:${result.status}` }); // 引擎重试上报（与 catch 分支一致——835 curl 失败重试也发 retry 状态→download.retrying 事件→waiting_retries 面板）
           console.log(`  [重试 ${attempt + 1}/${CONFIG.downloadRetryTimes}] ${job.filename} (${result.status})`);
           await sleep(CONFIG.downloadRetryIntervalMs);
           try { tempSize = (await fs.promises.stat(tmpPath)).size; } catch { tempSize = 0; }
@@ -862,7 +866,7 @@ async function downloadFile(job, { onProgress = null, expectedSize: optExpected 
             await fs.promises.rename(tmpPath, thumbPath); // pp/thumbPath 已在回退分支顶部定义
             console.log(`  [缩略图回退] ${job.filename}（原图 404，已下载缩略图 ${fmtBytes(ts)}）`);
             log(`[下载] 缩略图回退 ${job.filename}（${fmtBytes(ts)}）`);
-            return { status: 'downloaded_thumb', job, size: ts };
+            return { status: 'downloaded_thumb', job, size: ts, savePath: thumbPath }; // savePath=实际缩略图路径（③产物登记用——原图 404 回退时 job.savePath 是原图路径不存在）
           }
           await fs.promises.rm(tmpPath, { force: true }).catch(() => {});
           return { status: `failed:${result.status}`, job };
@@ -1087,6 +1091,18 @@ function fileKind(name) {
  * 帖子级索引 html：人读（标题/meta/文件列表表/正文）+ JSON 机读块。
  * @param postDirDisplay 帖子目录的显示名（相对目标根，避免绝对路径写入索引；迁移/换机可用）
  * files: [{filename, size, exists, serverPath, rel}]  rel=相对帖子目录的落盘路径（去重登记用）
+ *
+ * ── HTML 生成机制（下载前/下载后双写 + 网盘记录时机）──
+ * 1. 前置 html（downloadOnePost ③，下载前写）：图片/附件初态；网盘【尚未下载】→ 正文链接保持原始 URL
+ * 2. 下载（图片/附件）+ 网盘下载（downloadNetdiskFiles，⑤.5——成功才 push 记录）
+ * 3. 后置 html（downloadOnePost ⑤，下载后刷新）：网盘【成功项】进 files 列表 + 正文 desc 本地化
+ * ── 网盘成功/失败判定（无需失败字段，正文本地化即状态）──
+ * · 正文里网盘链接【已本地化（href=本地文件）】= 下载成功
+ * · 正文里网盘链接【仍是原始 URL】= 没下载成功/没下载（失败网盘项从不记录进 html）
+ * · serverPath：pawchive 文件=相对路径（/data/...）；网盘=完整网址（http/https 前缀天然标识网盘，
+ *   域名区分类型，URL 本身作去重/复用键——dropbox 规范 URL 去 rlkey 等分享参数，drive 用完整分享 URL）
+ * · 无 netdiskId 字段（URL 即身份）；旧格式（type: 前缀 + netdiskId）读取兼容，
+ *   且下载该帖重跑时 html 重新生成（writeOnePostIndex）→ 自然清理旧格式无效字段（自动迁移为新格式）
  */
 function buildPostIndexHtml(post, creatorName, postDirDisplay, files) {
   // 标注类型，并按「真实显示」分区：图片墙 / 视频播放器 / 压缩包下载卡片
@@ -1095,7 +1111,10 @@ function buildPostIndexHtml(post, creatorName, postDirDisplay, files) {
   const extLinks = [...new Set((post.content || '').match(/https?:\/\/[^\s"'<>（）()，。、；；]+/g) || [])];
   // 外链表格保持原样（原始 URL 链接，展示来源；正文里的网盘链接才本地化）
   const netdiskFileByUrl = new Map();
-  for (const f of (files || [])) if (f.netdiskId) netdiskFileByUrl.set(f.netdiskId, f);
+  for (const f of (files || [])) {
+    if (f.serverPath && /^https?:/i.test(f.serverPath)) netdiskFileByUrl.set(f.serverPath, f); // 新格式：serverPath=完整网址即本地化匹配键
+    else if (f.netdiskId) netdiskFileByUrl.set(f.netdiskId, f); // 旧格式（netdiskId）兼容
+  }
   const extRows = extLinks
     .map((u, i) => {
       let host = '';
@@ -1124,7 +1143,7 @@ function buildPostIndexHtml(post, creatorName, postDirDisplay, files) {
     title: post.title || '', creatorName, url: postUrlOf(post),
     published: post.published || null, postDir: postDirDisplay || null,
     driveLinks: Object.values(NETDISK_PROVIDERS).some(p => p.match.test(post.content || '')), // 正文是否有网盘链接（遍历 provider 判断，新增网盘自动识别；快速跳过有网盘不跳，防历史帖漏下网盘）
-    files: typed.map(f => ({ filename: f.filename, size: f.size || null, exists: !!f.exists, serverPath: f.serverPath, netdiskId: f.netdiskId || null, rel: f.rel, kind: f.kind })),
+    files: typed.map(f => ({ filename: f.filename, size: f.size || null, exists: !!f.exists, serverPath: f.serverPath, rel: f.rel, kind: f.kind })),
   };
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -1268,7 +1287,7 @@ function buildCreatorIndexHtml(plan, postsSummary, links, avatars) {
   <h1>${esc(plan.creatorName)}</h1>
   <p class="meta">
     平台：${esc(plan.service || '-')}　创作者 ID：${esc(plan.userId || '-')}　帖子数：${postsSummary.length}<br>
-    本地目录：${esc(plan.creatorDir)}
+    本地目录：${esc(CONFIG.dataRoot ? path.relative(CONFIG.dataRoot, plan.creatorDir) : plan.creatorDir)}
   </p>
   ${(links || []).length ? `<h2>关联渠道（同作者其他平台）</h2>
   <table><tr><th>平台</th><th>名字</th><th>账号链接</th></tr>${linkRows}</table>` : ''}
@@ -1348,8 +1367,9 @@ async function buildHashIndex(targetPath, plan) {
         if (f.serverPath && f.rel && f.exists && !path.isAbsolute(f.rel)) {
           const rec = { rel: path.join(postDir, f.rel), size: f.size != null ? Number(f.size) : null };
           index.set(f.serverPath, rec);
-          // 网盘项（serverPath 形如 <type>:<hash>）：额外登记 ID 键，跨帖同链接复用
-          if (/^[a-z]+:/i.test(f.serverPath) && f.netdiskId) index.set(`${f.serverPath.split(':')[0]}Id:${f.netdiskId}`, rec);
+          // 网盘项：完整 URL 即键（http/https 前缀天然标识网盘；dropbox 规范 URL 已去 rlkey 等分享参数——同文件不同分享链接归一同复用）；旧格式（typeId:）兼容
+          if (/^https?:/i.test(f.serverPath)) index.set(f.serverPath, rec);
+          else if (/^[a-z]+:/i.test(f.serverPath) && f.netdiskId) index.set(`${f.serverPath.split(':')[0]}Id:${f.netdiskId}`, rec);
         }
       }
     }
@@ -1480,7 +1500,7 @@ async function writeOnePostIndex(post, jobs, creatorName, targetPath) {
   for (const j of jobs) {
     let size = 0;
     try { size = (await fs.promises.stat(j.savePath)).size; } catch { /* 缺失/未下载 */ }
-    files.push({ filename: j.filename, size: j.apiSize ?? size, exists: size > 0, serverPath: j.serverPath, netdiskId: j.netdiskId || null, rel: path.relative(postDir, j.savePath) }); // netdiskId：网盘项（drive:<hash>）跨帖 ID 键复用依据 // size：API 值优先（文件真实大小），本地 stat 兜底
+    files.push({ filename: j.filename, size: j.apiSize ?? size, exists: size > 0, serverPath: j.serverPath, rel: path.relative(postDir, j.savePath) }); // size：API 值优先（文件真实大小），本地 stat 兜底；网盘项 serverPath=完整网址（天然标识网盘 + 去重/复用键）
   }
   const html = buildPostIndexHtml(post, creatorName, path.relative(targetPath, postDir), files);
   await fs.promises.mkdir(postDir, { recursive: true });
@@ -1618,14 +1638,14 @@ async function downloadRevision(revision, postDir, hashIndex, { concurrency = 1,
       if (idx >= todo.length) return;
       const job = todo[idx];
       emit({ type: 'job.queued', data: { creator: (job.post && job.post.creatorName) || '', filename: job.filename } }); // 文件 job 入队（对齐原版 job_queued——queued_files 累计）
-      emit({ type: 'download.started', data: { filename: job.filename, creator: (job.post && job.post.creatorName) || '' } }); // 事件类型对齐（原版 download.* 契约——前端 transfers 视图消费）
+      emit({ type: 'download.started', data: { filename: job.filename, creator: (job.post && job.post.creatorName) || '' } }); // 下载开始事件（引擎全流程自含，字段留给上层聚合）
       let retryCount = 0; // download.retrying 重试计数（downloadFile 重试时累加）
       const r = await downloadWithDedup(job, hashIndex, inFlight, {
         abortCtl: opts.abortCtl || null, // 任务 abort 级联（2026-09-29——真中断）
         onProgress: p => {
           tracker.onProgress({ ...p, savePath: job.savePath });
-          emit({ type: 'job.progress', data: { filename: job.filename, percent: p.percent ?? null, size: p.size ?? null, speed: p.speed ?? null, totalSize: p.total ?? null, creator: (job.post && job.post.creatorName) || '' } });
-          if (String(p.state).startsWith('retry:')) { // 下载重试状态——映射 download.retrying（前端事件模板消费）
+          emit({ type: 'job.progress', data: { filename: job.filename, percent: p.percent ?? null, size: p.doneBytes ?? p.size ?? null, speed: p.speed ?? null, totalSize: p.total ?? null, creator: (job.post && job.post.creatorName) || '' } });
+          if (String(p.state).startsWith('retry:')) { // 下载重试状态事件（引擎重试上报，字段供上层判断）
             emit({ type: 'download.retrying', data: { filename: job.filename, retry_count: ++retryCount } });
           }
         },
@@ -1634,8 +1654,8 @@ async function downloadRevision(revision, postDir, hashIndex, { concurrency = 1,
         : ['exists', 'record_mismatch', 'thumb_exists'].includes(r.status) ? 'existed'
         : r.status === 'failed:aborted' ? 'aborted' : 'failed'; // abort 不标 failed（对齐原版 CancelledError——不虚高 failed_files）
       tracker.onFinish(job.savePath, status);
-      emit({ type: `job.${status}`, data: { filename: job.filename, size: r.size ?? null } });
-      emit({ type: 'download.finished', data: { filename: job.filename, outcome: status, status, size: r.size ?? null } }); // 事件类型对齐（download.finished outcome/status——前端事件消息模板）
+      emit({ type: `job.${status}`, data: { filename: job.filename, size: r.size ?? null, savePath: r.savePath || job.savePath, rawStatus: r.status } }); // savePath/rawStatus：产物登记（③ delete outputs——core 只登记真下载 downloaded/downloaded_thumb；linked/copied 硬链接复用/exists 不算本任务产物；downloaded_thumb 用实际缩略图路径）
+      emit({ type: 'download.finished', data: { filename: job.filename, outcome: status, status, size: r.size ?? null } }); // 下载完成事件（引擎结果上报：outcome/status/size）
       if (!tty) console.log(`  [修订${status === 'downloaded' ? '下载' : status === 'existed' ? '已存在' : '失败'}] ${job.filename}`);
     }
   });
@@ -1728,6 +1748,25 @@ async function downloadOnePost(listPost, meta, targetPath, opts = {}, shared = n
         await downloadRevision(rev, postDir, hashIndex, { concurrency, tty, creatorName: plan.creatorName, dryrun, onEvent: emit });
       }
     }
+        // dryrun 模拟网盘下载：只解析正文网盘链接展示计划（不请求网盘网络——网盘不可访问也能看到将下载项）
+    let netdiskPlan = 0;
+    if (CONFIG.downloadDrive) {
+      const content = detail.content || '';
+      for (const [type, p] of Object.entries(NETDISK_PROVIDERS)) {
+        const m = content.match(p.match);
+        if (m) {
+          netdiskPlan++;
+          const id = p.extract(m[0]);
+          const fbMatch = /[^/?#]+(?=\?|$)/.exec(String(id).split('#')[0]);
+          const fb = fbMatch ? fbMatch[0] : `${type}_${id}`;
+          console.log(`  [网盘计划] ${type} ${fb} <- ${String(id).slice(0, 70)}${CONFIG.downloadDrive ? '' : '（网盘下载已关）'}`);
+        }
+      }
+      // dryrun 模拟 html 变更：下载后 html 将写入的记录（附件/图片 + 网盘成功项）与正文本地化
+      console.log(`  [HTML] 将写 pawchive-index.html：文件 ${checked.length} 项 + 网盘 ${netdiskPlan} 项（成功则正文网盘链接本地化 ${netdiskPlan} 处；失败项不记录、正文保持原始 URL）`);
+    } else {
+      console.log(`  [HTML] 将写 pawchive-index.html：文件 ${checked.length} 项（网盘下载已关）`);
+    }
     allChecked.push(...checked); return { files: checked.length, downloaded: 0, failed: 0 };
   } // dryrun 只展示计划
 
@@ -1749,13 +1788,13 @@ async function downloadOnePost(listPost, meta, targetPath, opts = {}, shared = n
       if (idx >= todoJobs.length) return;
       const job = todoJobs[idx];
       emit({ type: 'job.queued', data: { creator: '', filename: job.filename } }); // 修订文件入队（对齐原版 job_queued）
-      emit({ type: 'download.started', data: { filename: job.filename, creator: '' } }); // 事件类型对齐（download.* 契约）
+      emit({ type: 'download.started', data: { filename: job.filename, creator: '' } }); // 下载开始事件（修订下载路径——引擎全流程自含）
       let retryCount = 0;
       const r = await downloadWithDedup(job, hashIndex, inFlight, {
         abortCtl: opts.abortCtl || null, // 任务 abort 级联（2026-09-29——真中断）
         onProgress: p => {
           tracker.onProgress({ ...p, savePath: job.savePath });
-          emit({ type: 'job.progress', data: { filename: job.filename, percent: p.percent ?? null, size: p.size ?? null, speed: p.speed ?? null, totalSize: p.total ?? null, creator: (job.post && job.post.creatorName) || '' } });
+          emit({ type: 'job.progress', data: { filename: job.filename, percent: p.percent ?? null, size: p.doneBytes ?? p.size ?? null, speed: p.speed ?? null, totalSize: p.total ?? null, creator: (job.post && job.post.creatorName) || '' } });
           if (String(p.state).startsWith('retry:')) {
             emit({ type: 'download.retrying', data: { filename: job.filename, retry_count: ++retryCount } });
           }
@@ -1766,7 +1805,7 @@ async function downloadOnePost(listPost, meta, targetPath, opts = {}, shared = n
         : ['exists', 'record_mismatch', 'thumb_exists'].includes(r.status) ? 'existed'
         : r.status === 'failed:aborted' ? 'aborted' : 'failed'; // abort 不标 failed（对齐原版 CancelledError——不虚高 failed_files）
       tracker.onFinish(job.savePath, status);
-      emit({ type: `job.${status}`, data: { filename: job.filename, size: r.size ?? null } });
+      emit({ type: `job.${status}`, data: { filename: job.filename, size: r.size ?? null, savePath: r.savePath || job.savePath, rawStatus: r.status } }); // savePath/rawStatus：产物登记（③ delete outputs——core 只登记真下载 downloaded/downloaded_thumb；linked/copied 硬链接复用/exists 不算本任务产物；downloaded_thumb 用实际缩略图路径）
       emit({ type: 'download.finished', data: { filename: job.filename, outcome: status, status, size: r.size ?? null } });
       // 日志带文件大小（反爬 376B 占位一目了然）
       log(`[下载] ${r.status} ${job.filename}${r.size != null ? ` ${fmtBytes(r.size)}` : ''}`);
@@ -1805,7 +1844,7 @@ async function downloadOnePost(listPost, meta, targetPath, opts = {}, shared = n
       await downloadRevision(rev, postDir, hashIndex, { concurrency: postConc, tty, creatorName: plan.creatorName, dryrun, onEvent: emit });
     }
   }
-  emit({ type: 'post.completed', data: { postId: detail.id || listPost.id, title: detail.title || '', files: checked.length, downloaded: tracker.counts.downloaded, existed: checked.filter(j => j.exists && !j.corrupt).length, failed: tracker.counts.failed } });
+  emit({ type: 'post.completed', data: { postId: detail.id || listPost.id, title: detail.title || '', files: checked.length, downloaded: tracker.counts.downloaded, existed: checked.filter(j => j.exists && !j.corrupt).length, failed: tracker.counts.failed, hasJobs: todoJobs.length > 0 } }); // hasJobs：该帖是否发过 job.* 事件（2026-09-29 修复 progressReducer 双计——有 job 事件时帖级汇总不叠加）
   return { files: checked.length, downloaded: tracker.counts.downloaded, failed: tracker.counts.failed };
 }
 
@@ -1839,7 +1878,7 @@ async function downloadAuthor(posts, meta, targetPath, opts = {}) {
   try {
     const creatorIndex = parseIndexObj(await fs.promises.readFile(path.join(plan.creatorDir, CONFIG.indexFilename), 'utf8'));
     for (const p of (creatorIndex && creatorIndex.posts) || []) {
-      if (p.relDir && p.fileCount > 0 && p.downloaded === p.fileCount && p.driveLinks === false) completedPosts.add(String(p.postId)); // 仅「明确无网盘链接」才快速跳过；有网盘/旧 html 无标记 → 不跳（重跑补网盘）
+      if (CONFIG.fastSkip && p.relDir && p.fileCount > 0 && p.downloaded === p.fileCount && p.driveLinks === false) completedPosts.add(String(p.postId)); // 快速跳过受 PAWCHIVE_FAST_SKIP 控制（默认关→全量检查补外链/网盘；开→仅明确无网盘链接的完整帖跳过）
     }
     if (completedPosts.size) log(`[索引] 创作者总览检测到 ${completedPosts.size} 帖已完整，直接跳过（不解析详情）`);
   } catch { /* 无创作者级 html（首次）→ 全量处理 */ }
@@ -1987,7 +2026,7 @@ module.exports = {
   walkHtmlFiles, buildHashIndex, linkOrCopy, downloadWithDedup, downloadFile, streamOnce,
   finalizePlan, collectPostFiles, writeOnePostIndex, writeCreatorIndex,
   fetchPostsByUrl, downloadOnePost, downloadAuthor,
-  getPost, fetchPostRevisions, fetchAllCreators, // Pawchive 单帖详情 + 修订版本列表 + 创作者全量（兼容层搜索用）
-  NETDISK_PROVIDERS, downloadNetdiskFiles, // 网盘 provider 注册表 + 下载（测试/兼容层复用）
+  getPost, fetchPostRevisions, fetchAllCreators, // Pawchive 单帖详情 + 修订版本列表 + 创作者全量（引擎 API——供上层调用）
+  NETDISK_PROVIDERS, downloadNetdiskFiles, // 网盘 provider 注册表 + 下载（引擎 API——供上层复用）
   indexFileFor, loadIndex, saveIndex, fetchPostsWithResume,
 };

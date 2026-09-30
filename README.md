@@ -2,6 +2,47 @@
 
 **最小 Node.js CLI**：零依赖，Node 18+ 全局 `fetch` 即可运行，Pawchive 公开作品下载器。
 
+## 架构边界（分层职责 / 纪律）
+
+> 本项目 = **独立下载引擎（cli.js）+ 独立插件式兼容层（server.js → core.js → adapters/）**。
+> cli.js 在兼容层存在之前就已具备完整功能（索引、去重、下载、解析全流程），可完全独立运行；
+> 兼容层只是把它接到 KToolBox WebUI 契约上，**不改动引擎内部**。改代码前先读本节。
+
+**分层与依赖方向（严格单向，禁止反向/旁路）：**
+
+```
+npm run web / node server.js          ← 入口装配：协议注册 + 路由 + 调度器启动
+        │
+        ▼
+adapters/KToolBox-webui.js            ← 协议适配器（翻译层）：HTTP 请求/响应契约翻译；
+        │                              不承载下载业务，不直接 require cli.js
+        ▼
+core.js                               ← 兼容层业务内核：任务状态机/调度器/abort/auto-sync/
+        │                              progressReducer 聚合、事件合成（onEvent 输出层补契约字段）、
+        │                              SQLite 持久化；内部 require cli.js 复用下载引擎
+        ▼
+cli.js                                ← 独立下载引擎（零依赖，仅 node: 内置模块 fs/path/
+                                          child_process/crypto）：索引拉取→去重→下载→解析
+                                          全流程自含，可 `node cli.js <url>` 独立运行
+```
+
+**职责边界（谁做什么）：**
+
+| 层 | 文件 | 职责 | 禁止事项 |
+|---|---|---|---|
+| 下载引擎 | `cli.js` | 索引断点续拉、pawchive-index.html 生成、内容寻址硬链接去重、下载（curl 子进程）+ 断点续传 + abort、网盘 provider、命名/落盘、TTY 进度、自然事件上报（`emit`：job.*/download.*/post.*） | 不携带 WebUI 契约字段（key/completed 等合成留给 core）；不 require 上层模块 |
+| 兼容层内核 | `core.js` | 任务/attempt 状态机（CREATE→RUNNING→completed/aborted/error）、调度器（blocked 资源锁排队）、abortCtl 级联真中断、auto-sync 计划+查重、progressReducer 累计统计、onEvent 输出层合成前端契约字段（download.* 补 key、finished 补 completed_bytes/total_bytes/elapsed_seconds/average_speed_bps、任务级 creator.started/finished）、EventStore 持久化 | 不实现下载/去重/解析逻辑（这些在 cli 引擎） |
+| 协议适配器 | `adapters/*.js` | HTTP 路由匹配、请求解析、响应序列化（json/SSE）、调用 core 业务 API；`scripts/KToolBox-env-compat.js` 是 env 翻译中枢（双向映射，兼容层强制读） | 不承载下载业务、不直接 require cli.js |
+| 入口 | `server.js` | 协议选择（PAWCHIVE_WEB_PROTOCOL）、HTTP 服务、装配 core+adapter、调度器启动（startTaskScheduler/startAutoSyncScheduler） | — |
+
+**纪律（改代码前必读）：**
+
+1. **cli.js 不到万不得已禁止改动**——它是独立下载工具，兼容层需求（WebUI 契约字段、事件类型转换）一律在 core.js 输出层/适配器实现。
+2. **引擎功能只进 cli.js**：索引、去重、下载、解析、网盘等下载能力永不移入兼容层。
+3. **依赖方向单向**：server → adapters → core → cli；任何反向 require（cli 引用 core/adapters、adapter 直接 require cli）都是架构违规。
+4. **事件契约边界**：cli.js 只发自然事件（下载流程自含字段）；WebUI 需要的契约字段（filename→key、completed_bytes、elapsed、speed 等）由 core.js `onEvent` 输出层合成，**永不塞回 cli**。
+5. **scripts/*.js 独立工具**可复用 cli.js 导出（migrate.js/clean-bot.js 均 `require('../cli.js')`），但同样禁止反向依赖。
+
 ## 用法
 
 ```bash
@@ -92,10 +133,11 @@ Pawchive 文件路径是 SHA-256 内容寻址（`/<2位>/<3位>/<64位hash>.<ext
 
 ## 下载特性
 
+- **进度统计语义（已处理/全部）**：任务统计「文件」显示 `已处理 / 全部`，其中**已处理 = 全部 - 失败**（失败的文件单独计 failed_files，不算已处理）——与 KToolBox 原版语义不同，为我们的自定义约定
 - **拉取索引**：分页每页落盘 `/.pawchive/*.index.json`，中断续拉、缓存复用；**作者更新检测**——全量缓存（done）每次运行拉最新一页校验，作者发新帖自动失效重拉
 - **下载流程（并行，每帖 html 前置/后置）**：每帖先生成 `pawchive-index.html` → 大小校验（与 html 记录 size 对比，不符=损坏覆盖）→ 下载（.tmp 断点续传 + Content-Length/Content-Range 头解析作完整性校验，376B 反爬占位与 404 页面不落盘）→ 帖下载完刷新帖 html **并同步刷新创作者级总览 html**（每帖都刷新，含全跳过帖）
 - **并行下载**：并发数由 `--concurrency`/`PAWCHIVE_CONCURRENCY` 控制（默认 5，file host 活动下载上限），**持续维持并发数**（完成一个立即补位，非组式等待）；帖启动间隔防 API 解析连发
-- **快速跳过**：下载前读创作者级 html 的帖子总览（fileCount/downloaded），已完整下载的帖直接跳过、不解析详情
+- **快速跳过**（`PAWCHIVE_FAST_SKIP=1` 开启，**默认关**）：下载前读创作者级 html 的帖子总览（fileCount/downloaded），已完整下载的帖直接跳过、不解析详情——**默认关 = 历史帖全量 getPost 检查**，保证早期未录外链/网盘的帖能重新识别补下载
 - **查重跳过**：目标已存在**且大小与 html 记录一致**才跳过；存在但大小不符 → 覆盖重下（.tmp 续传）；**无记录但文件存在 → 保守跳过**（历史下载文件不重下、不覆盖）
 - **断点续传**：写入 `<文件>.tmp`，中断重跑从断点继续；失败自动重试（**HTTP 4xx/5xx 确定性失败不重试**，网络错误重试；带 UA，File host Range 续传实测 9.4MB/s）
 - **大小写冲突**：不同渠道作者名仅大小写不同（Akt vs akt）时自动加「(平台)」前缀（如 `(patreon) Akt`，前缀格式由 `PAWCHIVE_CREATOR_PREFIX_FORMAT` 配置），兼容大小写不敏感文件系统；同名不同大小写的创作者目录**共用同一目录**（下载按文件级去重，不会覆盖已有内容）
@@ -151,6 +193,7 @@ Pawchive 文件路径是 SHA-256 内容寻址（`/<2位>/<3位>/<64位hash>.<ext
 | `PAWCHIVE_FILES_PREFIX` | `/data` | 文件路径前缀 |
 | `PAWCHIVE_THUMB_BASE` | `https://img.pawchive.pw/thumbnail` | 原图 404 时缩略图回退 base |
 | `PAWCHIVE_DOWNLOAD_DRIVE` | `1` | 下载正文网盘链接（0=关；provider 可扩展） |
+| `PAWCHIVE_FAST_SKIP` | `0` | 快速跳过已完整帖（1=开；默认关=全量检查补漏录外链/网盘） |
 | `PAWCHIVE_ANTIBOT_SIZE` | `376` | 反爬占位大小（file host bot 提示字节特征） |
 | `PAWCHIVE_404_PAGE_MAX` | `4096` | 404/错误页判定阈值（小于此大小才读头部判断） |
 | `PAWCHIVE_CURL_CONNECT_TIMEOUT` | `30` | curl 连接超时秒（下载与流式请求统一） |
@@ -167,6 +210,7 @@ Pawchive 文件路径是 SHA-256 内容寻址（`/<2位>/<3位>/<64位hash>.<ext
 | `PAWCHIVE_LOG` | `./pawchive.log` | 日志文件路径 |
 | `PAWCHIVE_ATTACHMENTS_SUBDIR` | 空（帖根） | 附件子目录（naming 页附件目录字段） |
 | `PAWCHIVE_INCLUDE_REVISIONS` | `1` | 修订版本下载开关（0=关；`PAWCHIVE_REVISIONS_SUBDIR` 默认 `revisions` 子目录） |
+| `PAWCHIVE_WRITE_CREATOR_INDEX` | `1` | 创作者索引 html 开关状态（仅供前端显示——代码强制启用，`pawchive-index.html` 决定去重/网盘下载） |
 | `PAWCHIVE_CREATORS_TTL_DAY` | `7` | 创作者搜索缓存 TTL 天数 |
 | `PAWCHIVE_WEB_PROTOCOL` / `HOST` / `PORT` | `KToolBox-webui` / `0.0.0.0` / `8789` | WebUI 兼容层：协议选择 / 监听地址 / 端口 |
 | `PAWCHIVE_WEB_DB` | `./webui.db` | 兼容层 SQLite 库（固定库重启不丢状态） |
@@ -196,6 +240,7 @@ Pawchive 文件路径是 SHA-256 内容寻址（`/<2位>/<3位>/<64位hash>.<ext
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 1.0.4 | 2026-09-30 | 架构边界文档化（README 新增「架构边界」章节：cli 独立引擎 vs core 兼容层 vs adapter 翻译，依赖单向、事件契约边界、改动纪律）；cli.js 注释措辞清理（残留「前端消费/兼容层」措辞改为引擎语义，6 处）；scripts/clean-bot.js require 路径修复（`./cli.js`→`../cli.js`，脚本原无法运行） |
 | 1.0.3 | 2026-09-29 | WebUI 兼容层功能批次：auto-sync 真实实现（计划 CRUD/定时器/run-pause-resume——自动按作者下载）；创作者搜索（fetchAllCreators 缓存 7 天）；naming 保存写配置（env-compat 双向翻译）；①层前端错误注入（error-reporter → .client-errors.jsonl）；DEBUG 启动端点自检（PAWCHIVE_WEB_DEBUG=1）；作者软删 removed 机制；修订下载默认开；queued_files 对齐原版；legacy-migration 真实迁移；任务 spec.creators 双格式解析；契约扫描工具（contract-scan）；docs 全面重写（设计文档按代码逐节对齐）｜ **行为对齐批次（对齐 Python 原版）**：任务创建去重（同作者 ACTIVE → 409+current_task_id）、任务真中断（abortCtl 级联——stop/pause/删除真正停下载 + 终态不被覆盖）、progressReducer 累计统计（transferred 累计/speed 总速度/total/eta/active 清理）、强校验模式（PAWCHIVE_STRICT_VERIFY——sha256 vs serverPath——不符优先修复重下）、跨进程文件锁（同文件多 cli 防重复下载）、.tmp 分类（保留续传/清冗余）、断点续传 fsync、前端 P1（搜索补 service/user/任务编辑方案 A/MCP 空对齐） |
 | 1.0.2 | 2026-09-28 | 附件子目录开关（`PAWCHIVE_ATTACHMENTS_SUBDIR`）；dryrun 目录模拟；KToolBox 兼容层（`--gen-env` 一次性导出 + 同参数调用，env + ktoolbox.toml 命名模板映射）；migrate 双向（KToolBox→我们 + `--to-ktool` 我们→KToolBox，旧文件识别从 ktoolbox.toml 读）；KToolBox 风格 TTY 进度条（图形 Bar + 颜色）；缩略图已存在计入已存在、快速跳过帖计数；单帖统一收尾统计 |
 | 1.0.1 | 2026-09-28 | 快速跳过防漏网盘（帖 html driveLinks 字段按 provider 识别，历史帖自动补下网盘包）；缩略图已存在跳过（不重复下载）；网盘病毒确认页自动处理 + 断点续传 |

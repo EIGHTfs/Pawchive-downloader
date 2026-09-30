@@ -20,7 +20,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const cli = require('./cli.js');
+const cli = require('../cli.js'); // 复用 cli.log（脚本在 scripts/，cli.js 在上级——同 migrate.js 写法）
 
 // ---------- 参数 ----------
 const args = process.argv.slice(2);
