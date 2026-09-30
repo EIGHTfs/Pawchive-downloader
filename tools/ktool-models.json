@@ -1,0 +1,4996 @@
+{
+  "meta": {
+    "generator": "tools/extract-ktool-apis.py",
+    "source_repo": "/volume1/@appdata/DeepSeekHarness-NAS/0.1.6-alpha.1/工作区/Pawchive-downloader/.probe-ktoolbox",
+    "extracted_at": "2026-09-28T01:38:21Z",
+    "python_version": "3.8.15"
+  },
+  "count": 124,
+  "models": {
+    "Parameters": {
+      "module": "ktoolbox.api.parameters",
+      "fields": []
+    },
+    "PageParameters": {
+      "module": "ktoolbox.api.parameters",
+      "fields": [
+        {
+          "name": "query",
+          "type": "SearchQuery | None",
+          "required": false,
+          "default": "Field(default=None, alias='q')",
+          "description": null
+        },
+        {
+          "name": "offset",
+          "type": "Offset | None",
+          "required": false,
+          "default": "Field(default=None, alias='o')",
+          "description": null
+        }
+      ]
+    },
+    "CreatorParameters": {
+      "module": "ktoolbox.api.parameters",
+      "fields": [
+        {
+          "name": "service",
+          "type": "NonEmptyString",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "creator_id",
+          "type": "NonEmptyString",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "PostParameters": {
+      "module": "ktoolbox.api.parameters",
+      "fields": [
+        {
+          "name": "service",
+          "type": "NonEmptyString",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "creator_id",
+          "type": "NonEmptyString",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "post_id",
+          "type": "NonEmptyString",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "FileHashParameters": {
+      "module": "ktoolbox.api.parameters",
+      "fields": [
+        {
+          "name": "file_hash",
+          "type": "SHA256Hash",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "ErrorResponse": {
+      "module": "ktoolbox.api.generated.models",
+      "fields": [
+        {
+          "name": "error",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        }
+      ]
+    },
+    "FileReference": {
+      "module": "ktoolbox.api.generated.models",
+      "fields": [
+        {
+          "name": "id",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "name",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "path",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "deferred",
+          "type": "bool | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "preview_only",
+          "type": "bool | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        }
+      ]
+    },
+    "CreatorSummary": {
+      "module": "ktoolbox.api.generated.models",
+      "fields": [
+        {
+          "name": "favorited",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": "Number of Pawchive favorites.",
+          "min_length": "1"
+        },
+        {
+          "name": "indexed",
+          "type": "float | datetime",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "name",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "service",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null,
+          "min_length": "1"
+        },
+        {
+          "name": "updated",
+          "type": "float | datetime",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "CreatorProfile": {
+      "module": "ktoolbox.api.generated.models",
+      "fields": [
+        {
+          "name": "id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null,
+          "min_length": "1"
+        },
+        {
+          "name": "public_id",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "service",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null,
+          "min_length": "1"
+        },
+        {
+          "name": "name",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "indexed",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "updated",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "relation_id",
+          "type": "int | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "ever_imported",
+          "type": "bool | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "kemono_favorited",
+          "type": "int | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "last_import_favs",
+          "type": "int | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "import_size_cap_gb",
+          "type": "float | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        }
+      ]
+    },
+    "Post": {
+      "module": "ktoolbox.api.generated.models",
+      "fields": [
+        {
+          "name": "id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null,
+          "min_length": "1"
+        },
+        {
+          "name": "user",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null,
+          "min_length": "1"
+        },
+        {
+          "name": "service",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null,
+          "min_length": "1"
+        },
+        {
+          "name": "title",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "content",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "substring",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "embed",
+          "type": "dict[(str, Any)] | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "shared_file",
+          "type": "bool | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "added",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "published",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "edited",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "file",
+          "type": "FileReference | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "attachments",
+          "type": "list[FileReference] | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "poll",
+          "type": "dict[(str, Any)] | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "captions",
+          "type": "list[Any] | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "tags",
+          "type": "str | list[Any] | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "origin",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "preview_state",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "has_full",
+          "type": "bool | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "preview_attempts",
+          "type": "int | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "detail_fetched",
+          "type": "bool | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "import_size_cap_gb",
+          "type": "float | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "next",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "prev",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        }
+      ]
+    },
+    "Revision": {
+      "module": "ktoolbox.api.generated.models",
+      "fields": [
+        {
+          "name": "id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null,
+          "min_length": "1"
+        },
+        {
+          "name": "user",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null,
+          "min_length": "1"
+        },
+        {
+          "name": "service",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null,
+          "min_length": "1"
+        },
+        {
+          "name": "title",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "content",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "substring",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "embed",
+          "type": "dict[(str, Any)] | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "shared_file",
+          "type": "bool | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "added",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "published",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "edited",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "file",
+          "type": "FileReference | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "attachments",
+          "type": "list[FileReference] | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "poll",
+          "type": "dict[(str, Any)] | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "captions",
+          "type": "list[Any] | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "tags",
+          "type": "str | list[Any] | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "origin",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "preview_state",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "has_full",
+          "type": "bool | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "preview_attempts",
+          "type": "int | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "detail_fetched",
+          "type": "bool | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "import_size_cap_gb",
+          "type": "float | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "next",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "prev",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "revision_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "Announcement": {
+      "module": "ktoolbox.api.generated.models",
+      "fields": [
+        {
+          "name": "service",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "user_id",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "hash",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "content",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": "SHA-256 digest."
+        },
+        {
+          "name": "added",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        }
+      ]
+    },
+    "Fancard": {
+      "module": "ktoolbox.api.generated.models",
+      "fields": [
+        {
+          "name": "id",
+          "type": "int | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "user_id",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "file_id",
+          "type": "int | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "hash",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "mtime",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "ctime",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "mime",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "ext",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "added",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "size",
+          "type": "int | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "ihash",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        }
+      ]
+    },
+    "FileSearchPost": {
+      "module": "ktoolbox.api.generated.models",
+      "fields": [
+        {
+          "name": "file_id",
+          "type": "int | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "id",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "user",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "service",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "title",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "substring",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "published",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "file",
+          "type": "FileReference | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "attachments",
+          "type": "list[FileReference] | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        }
+      ]
+    },
+    "DiscordFileSearchPost": {
+      "module": "ktoolbox.api.generated.models",
+      "fields": [
+        {
+          "name": "file_id",
+          "type": "int | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "id",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "server",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "channel",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "substring",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "published",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "embeds",
+          "type": "list[Any] | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "mentions",
+          "type": "list[Any] | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "attachments",
+          "type": "list[FileReference] | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        }
+      ]
+    },
+    "FileSearchResult": {
+      "module": "ktoolbox.api.generated.models",
+      "fields": [
+        {
+          "name": "id",
+          "type": "int | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "hash",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "mtime",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "ctime",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "mime",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "ext",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "added",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "size",
+          "type": "int | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "ihash",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "posts",
+          "type": "list[FileSearchPost] | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "discord_posts",
+          "type": "list[DiscordFileSearchPost] | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        }
+      ]
+    },
+    "CommentRevision": {
+      "module": "ktoolbox.api.generated.models",
+      "fields": [
+        {
+          "name": "id",
+          "type": "int | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "content",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "added",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        }
+      ]
+    },
+    "Comment": {
+      "module": "ktoolbox.api.generated.models",
+      "fields": [
+        {
+          "name": "id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "parent_id",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "commenter",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "commenter_name",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "content",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "published",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "revisions",
+          "type": "list[CommentRevision] | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        }
+      ]
+    },
+    "AccountFavorite": {
+      "module": "ktoolbox.api.generated.models",
+      "fields": [
+        {
+          "name": "faved_seq",
+          "type": "int | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "id",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "indexed",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "last_imported",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "name",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "service",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "updated",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        }
+      ]
+    },
+    "LoginResult": {
+      "module": "ktoolbox.webui.auth",
+      "fields": [
+        {
+          "name": "token",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "session",
+          "type": "WebUISession",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "AutomaticSyncRunRecord": {
+      "module": "ktoolbox.webui.auto_sync_models",
+      "fields": [
+        {
+          "name": "id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "plan_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "plan_name",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "trigger",
+          "type": "AutomaticSyncRunTrigger",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "status",
+          "type": "AutomaticSyncRunStatus",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "task_id",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "scheduled_for",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "cutoff_at",
+          "type": "datetime",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "started_at",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "finished_at",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "error",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        }
+      ]
+    },
+    "AutomaticSyncUpdateSummary": {
+      "module": "ktoolbox.webui.auto_sync_models",
+      "fields": [
+        {
+          "name": "service",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "creator_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "creator_name",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "new_posts",
+          "type": "int",
+          "required": false,
+          "default": "Field(ge=0)",
+          "description": null
+        },
+        {
+          "name": "last_discovered_at",
+          "type": "datetime",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "AutomaticSyncPlanListResponse": {
+      "module": "ktoolbox.webui.auto_sync_models",
+      "fields": [
+        {
+          "name": "plans",
+          "type": "list[AutomaticSyncPlan]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "revision",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "next_runs",
+          "type": "dict[(str, datetime | None)]",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "AutomaticSyncRunNowResponse": {
+      "module": "ktoolbox.webui.auto_sync_models",
+      "fields": [
+        {
+          "name": "task_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "_ScheduledPlan": {
+      "module": "ktoolbox.webui.auto_sync_scheduler",
+      "fields": [
+        {
+          "name": "signature",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "next_run_at",
+          "type": "datetime",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "ConfigurationDocument": {
+      "module": "ktoolbox.webui.config_store",
+      "fields": [
+        {
+          "name": "name",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "path",
+          "type": "Path",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "content",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "revision",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "CachedCreatorProfile": {
+      "module": "ktoolbox.webui.creator_profiles",
+      "fields": [
+        {
+          "name": "service",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "creator_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "name",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "fetched_at",
+          "type": "datetime",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "WebUISession": {
+      "module": "ktoolbox.webui.database",
+      "fields": [
+        {
+          "name": "username",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "csrf_token",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "last_seen_at",
+          "type": "datetime",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "_ResolvedRequest": {
+      "module": "ktoolbox.webui.filesystem",
+      "fields": [
+        {
+          "name": "directory",
+          "type": "Path",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "suggested_name",
+          "type": "str | None",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "MCPTokenRecord": {
+      "module": "ktoolbox.webui.mcp_tokens",
+      "fields": [
+        {
+          "name": "id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "name",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "username",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "scopes",
+          "type": "tuple[(str, Ellipsis)]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "expires_at",
+          "type": "datetime | None",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "last_used_at",
+          "type": "datetime | None",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "revoked_at",
+          "type": "datetime | None",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "CreatedMCPToken": {
+      "module": "ktoolbox.webui.mcp_tokens",
+      "fields": [
+        {
+          "name": "token",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "record",
+          "type": "MCPTokenRecord",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "MediaPayload": {
+      "module": "ktoolbox.webui.media",
+      "fields": [
+        {
+          "name": "content",
+          "type": "bytes",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "media_type",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "LoginRequest": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "username",
+          "type": "str",
+          "required": false,
+          "default": "Field(min_length=1, max_length=256)",
+          "description": null
+        },
+        {
+          "name": "password",
+          "type": "str",
+          "required": false,
+          "default": "Field(min_length=1, max_length=4096)",
+          "description": null
+        }
+      ]
+    },
+    "SessionResponse": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "authenticated",
+          "type": "bool",
+          "required": false,
+          "default": "True",
+          "description": null
+        },
+        {
+          "name": "username",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "csrf_token",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "ProjectSummaryResponse": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "name",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "root",
+          "type": "Path",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "project_config",
+          "type": "Path",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "default_output",
+          "type": "Path",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "resolved_default_output",
+          "type": "Path",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "dotenv_files",
+          "type": "list[Path]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "version",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "published_target_timezone",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "AboutResponse": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "name",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "version",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "description",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "license",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "authors",
+          "type": "list[str]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "python_version",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "urls",
+          "type": "dict[(str, str)]",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "HealthResponse": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "status",
+          "type": "str",
+          "required": false,
+          "default": "'ok'",
+          "description": null
+        }
+      ]
+    },
+    "PathSelectorResponse": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "kind",
+          "type": "Literal[('directory', 'file')]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "scope",
+          "type": "Literal[('project', 'host')]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "value_mode",
+          "type": "Literal[('absolute', 'project_relative')]",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "ConfigChoiceResponse": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "value",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "label",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "description",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        }
+      ]
+    },
+    "ConfigFieldResponse": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "path",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "env_name",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "section",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "label",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "description",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "json_schema",
+          "type": "dict[(str, Any)]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "default",
+          "type": "Any",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "value",
+          "type": "Any",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "is_set",
+          "type": "bool",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "secret",
+          "type": "bool",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "source",
+          "type": "Literal[('default', '.env', 'prod.env', 'environment')] | str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "apply_mode",
+          "type": "Literal[('next_task', 'restart')]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "path_selector",
+          "type": "PathSelectorResponse | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "choice_mode",
+          "type": "Literal[('fixed', 'suggested')] | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "editor",
+          "type": "Literal['service_timezones'] | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "choices",
+          "type": "list[ConfigChoiceResponse]",
+          "required": false,
+          "default": "Field(default_factory=list)",
+          "description": null
+        }
+      ]
+    },
+    "FilesystemBreadcrumbResponse": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "label",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "path",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "FilesystemLocationResponse": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "label",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "path",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "FilesystemEntryResponse": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "name",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "path",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "project_relative_path",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "kind",
+          "type": "Literal[('directory', 'file', 'other')]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "is_symlink",
+          "type": "bool",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "navigable",
+          "type": "bool",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "deletable",
+          "type": "bool",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "FilesystemBrowseResponse": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "scope",
+          "type": "Literal[('project', 'host')]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "mode",
+          "type": "Literal[('directory', 'file')]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "path",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "project_relative_path",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "parent",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "separator",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "breadcrumbs",
+          "type": "list[FilesystemBreadcrumbResponse]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "locations",
+          "type": "list[FilesystemLocationResponse]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "entries",
+          "type": "list[FilesystemEntryResponse]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "suggested_name",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "offset",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "limit",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "has_more",
+          "type": "bool",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "FilesystemCreateDirectoryRequest": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "scope",
+          "type": "Literal[('project', 'host')]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "parent",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "name",
+          "type": "str",
+          "required": false,
+          "default": "Field(min_length=1, max_length=255)",
+          "description": null
+        }
+      ]
+    },
+    "FilesystemDeleteDirectoryRequest": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "scope",
+          "type": "Literal[('project', 'host')]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "path",
+          "type": "str",
+          "required": false,
+          "default": "Field(min_length=1, max_length=4096)",
+          "description": null
+        }
+      ]
+    },
+    "ConfigSchemaResponse": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "locale",
+          "type": "Literal[('zh-CN', 'zh-Hant', 'en', 'ja', 'ko', 'fr', 'ru')]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "sections",
+          "type": "dict[(str, str)]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "fields",
+          "type": "list[ConfigFieldResponse]",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "TextDocumentResponse": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "name",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "path",
+          "type": "Path",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "content",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "revision",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "TextDocumentUpdate": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "content",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "ValidationResponse": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "valid",
+          "type": "bool",
+          "required": false,
+          "default": "True",
+          "description": null
+        }
+      ]
+    },
+    "DotenvPatchRequest": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "values",
+          "type": "dict[(str, str | None)]",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "ProjectDocumentResponse": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "path",
+          "type": "Path",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "content",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "revision",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "configuration",
+          "type": "ProjectConfiguration",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "CreatorUpdateRequest": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "alias",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "enabled",
+          "type": "bool",
+          "required": false,
+          "default": "True",
+          "description": null
+        }
+      ]
+    },
+    "MediaAssetResponse": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "kind",
+          "type": "Literal[('avatar', 'banner', 'cover', 'attachment', 'content')]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "thumbnail_url",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "preview_url",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "original_url",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "CreatorRosterItemResponse": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "name",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "avatar",
+          "type": "MediaAssetResponse",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "banner",
+          "type": "MediaAssetResponse",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "CreatorSearchItemResponse": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "avatar",
+          "type": "MediaAssetResponse",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "banner",
+          "type": "MediaAssetResponse",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "PawchivePostSummaryResponse": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "cover",
+          "type": "MediaAssetResponse | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "effective_published",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "published_service_timezone",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "published_target_timezone",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "PawchivePostDetailResponse": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "cover",
+          "type": "MediaAssetResponse | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "effective_published",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "published_service_timezone",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "published_target_timezone",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "media",
+          "type": "list[MediaAssetResponse]",
+          "required": false,
+          "default": "Field(default_factory=list)",
+          "description": null
+        }
+      ]
+    },
+    "PawchiveRevisionSummaryResponse": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "cover",
+          "type": "MediaAssetResponse | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "effective_published",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "published_service_timezone",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "published_target_timezone",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "PawchiveRevisionDetailResponse": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "cover",
+          "type": "MediaAssetResponse | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "effective_published",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "published_service_timezone",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "published_target_timezone",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "media",
+          "type": "list[MediaAssetResponse]",
+          "required": false,
+          "default": "Field(default_factory=list)",
+          "description": null
+        }
+      ]
+    },
+    "MCPPostResponse": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "effective_published",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "published_service_timezone",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "published_target_timezone",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "MCPRevisionResponse": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "effective_published",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "published_service_timezone",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "published_target_timezone",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "BlockerListResponse": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "blockers",
+          "type": "list[BlockerSpec]",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "SiteVersionResponse": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "version",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "MCPTokenCreateRequest": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "name",
+          "type": "str",
+          "required": false,
+          "default": "Field(min_length=1, max_length=100)",
+          "description": null
+        },
+        {
+          "name": "password",
+          "type": "str",
+          "required": false,
+          "default": "Field(min_length=1, max_length=4096)",
+          "description": null
+        },
+        {
+          "name": "permission",
+          "type": "Literal[('read', 'manage')]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "expires_in_days",
+          "type": "Literal[(7, 30, 90, 365)] | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        }
+      ]
+    },
+    "MCPTokenResponse": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "name",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "username",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "permission",
+          "type": "Literal[('read', 'manage')]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "scopes",
+          "type": "list[str]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "expires_at",
+          "type": "datetime | None",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "last_used_at",
+          "type": "datetime | None",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "revoked_at",
+          "type": "datetime | None",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "active",
+          "type": "bool",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "MCPTokenCreatedResponse": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "name",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "username",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "permission",
+          "type": "Literal[('read', 'manage')]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "scopes",
+          "type": "list[str]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "expires_at",
+          "type": "datetime | None",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "last_used_at",
+          "type": "datetime | None",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "revoked_at",
+          "type": "datetime | None",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "active",
+          "type": "bool",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "token",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "MCPStatusResponse": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "running",
+          "type": "bool",
+          "required": false,
+          "default": "True",
+          "description": null
+        },
+        {
+          "name": "endpoint_path",
+          "type": "str",
+          "required": false,
+          "default": "'/mcp'",
+          "description": null
+        },
+        {
+          "name": "openapi_path",
+          "type": "str",
+          "required": false,
+          "default": "'/api/v1/openapi.yaml'",
+          "description": null
+        },
+        {
+          "name": "transport",
+          "type": "Literal['streamable-http']",
+          "required": false,
+          "default": "'streamable-http'",
+          "description": null
+        },
+        {
+          "name": "tool_count",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "MCPToolResponse": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "name",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "operation_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "description",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "category",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "scope",
+          "type": "Literal[('mcp:read', 'mcp:write')]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "safety",
+          "type": "Literal[('read', 'write', 'destructive')]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "open_world",
+          "type": "bool",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "MCPConfigurationPatchRequest": {
+      "module": "ktoolbox.webui.models",
+      "fields": [
+        {
+          "name": "values",
+          "type": "dict[(str, MCPConfigValue)]",
+          "required": false,
+          "default": "Field(min_length=1)",
+          "description": null
+        }
+      ]
+    },
+    "PublishedTimePolicySnapshot": {
+      "module": "ktoolbox.webui.naming_models",
+      "fields": [
+        {
+          "name": "mode",
+          "type": "Literal[('normalized', 'legacy_raw', 'kemono_utc')]",
+          "required": false,
+          "default": "'normalized'",
+          "description": null
+        },
+        {
+          "name": "target_timezone",
+          "type": "str",
+          "required": false,
+          "default": "'UTC'",
+          "description": null
+        },
+        {
+          "name": "fallback_service_timezone",
+          "type": "str",
+          "required": false,
+          "default": "'UTC'",
+          "description": null
+        },
+        {
+          "name": "service_timezones",
+          "type": "dict[(str, str)]",
+          "required": false,
+          "default": "Field(default_factory=dict)",
+          "description": null
+        }
+      ]
+    },
+    "NamingConfigurationResponse": {
+      "module": "ktoolbox.webui.naming_models",
+      "fields": [
+        {
+          "name": "default_output",
+          "type": "Path",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "resolved_default_output",
+          "type": "Path",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "naming",
+          "type": "ProjectNamingConfiguration",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "published_time",
+          "type": "PublishedTimePolicySnapshot",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "revision",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "conversion_pending",
+          "type": "bool",
+          "required": false,
+          "default": "False",
+          "description": null
+        }
+      ]
+    },
+    "NamingUpdateRequest": {
+      "module": "ktoolbox.webui.naming_models",
+      "fields": [
+        {
+          "name": "section",
+          "type": "NamingSection",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "naming",
+          "type": "ProjectNamingConfiguration",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "revision",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "default_output",
+          "type": "Path | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        }
+      ]
+    },
+    "NamingLegacyContextResponse": {
+      "module": "ktoolbox.webui.naming_models",
+      "fields": [
+        {
+          "name": "roots",
+          "type": "list[Path]",
+          "required": false,
+          "default": "Field(default_factory=list)",
+          "description": null
+        },
+        {
+          "name": "conversion_pending",
+          "type": "bool",
+          "required": false,
+          "default": "False",
+          "description": null
+        }
+      ]
+    },
+    "NamingLayoutVersionResponse": {
+      "module": "ktoolbox.webui.naming_models",
+      "fields": [
+        {
+          "name": "id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "revision",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "naming",
+          "type": "ProjectNamingConfiguration",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "published_time",
+          "type": "PublishedTimePolicySnapshot",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "origin",
+          "type": "NamingLayoutVersionOrigin",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "is_current",
+          "type": "bool",
+          "required": false,
+          "default": "False",
+          "description": null
+        }
+      ]
+    },
+    "NamingSourceParseRequest": {
+      "module": "ktoolbox.webui.naming_models",
+      "fields": [
+        {
+          "name": "format",
+          "type": "NamingSourceFormat",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "content",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "NamingSourceWarningResponse": {
+      "module": "ktoolbox.webui.naming_models",
+      "fields": [
+        {
+          "name": "code",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "count",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "NamingSourceDifferenceResponse": {
+      "module": "ktoolbox.webui.naming_models",
+      "fields": [
+        {
+          "name": "path",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "source_value",
+          "type": "Any",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "target_value",
+          "type": "Any",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "NamingSourceParseResponse": {
+      "module": "ktoolbox.webui.naming_models",
+      "fields": [
+        {
+          "name": "format",
+          "type": "NamingSourceFormat",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "naming",
+          "type": "ProjectNamingConfiguration",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "digest",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "recognized_fields",
+          "type": "list[str]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "defaulted_fields",
+          "type": "list[str]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "warnings",
+          "type": "list[NamingSourceWarningResponse]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "differences",
+          "type": "list[NamingSourceDifferenceResponse]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "default_published_time_mode",
+          "type": "Literal[('kemono_utc', 'pawchive_raw')]",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "ProjectLayoutConversionSource": {
+      "module": "ktoolbox.webui.naming_models",
+      "fields": [
+        {
+          "name": "kind",
+          "type": "Literal['project_layout']",
+          "required": false,
+          "default": "'project_layout'",
+          "description": null
+        },
+        {
+          "name": "version_ids",
+          "type": "list[str]",
+          "required": false,
+          "default": "Field(min_length=1)",
+          "description": null
+        }
+      ]
+    },
+    "PastedConfigConversionSource": {
+      "module": "ktoolbox.webui.naming_models",
+      "fields": [
+        {
+          "name": "kind",
+          "type": "Literal['pasted_config']",
+          "required": false,
+          "default": "'pasted_config'",
+          "description": null
+        },
+        {
+          "name": "format",
+          "type": "NamingSourceFormat",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "naming",
+          "type": "ProjectNamingConfiguration",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "digest",
+          "type": "str",
+          "required": false,
+          "default": "Field(pattern='^[0-9a-f]{64}$')",
+          "description": null
+        },
+        {
+          "name": "published_time_mode",
+          "type": "Literal[('kemono_utc', 'pawchive_raw', 'custom')] | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "published_time",
+          "type": "PublishedTimePolicySnapshot | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        }
+      ]
+    },
+    "LegacyNamingSourceResponse": {
+      "module": "ktoolbox.webui.naming_models",
+      "fields": [
+        {
+          "name": "name",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "path",
+          "type": "Path",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "revision",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "keys",
+          "type": "list[str]",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "LegacyNamingFieldResponse": {
+      "module": "ktoolbox.webui.naming_models",
+      "fields": [
+        {
+          "name": "path",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "env_key",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "legacy_value",
+          "type": "Any",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "current_value",
+          "type": "Any",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "sources",
+          "type": "list[str]",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "LegacyNamingMigrationResponse": {
+      "module": "ktoolbox.webui.naming_models",
+      "fields": [
+        {
+          "name": "pending",
+          "type": "bool",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "project_revision",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "sources",
+          "type": "list[LegacyNamingSourceResponse]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "fields",
+          "type": "list[LegacyNamingFieldResponse]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "ignored_environment_keys",
+          "type": "list[str]",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "LegacyNamingMigrationApplyRequest": {
+      "module": "ktoolbox.webui.naming_models",
+      "fields": [
+        {
+          "name": "selected_fields",
+          "type": "list[str]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "project_revision",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "source_revisions",
+          "type": "dict[(str, str)]",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "LegacyNamingMigrationResultResponse": {
+      "module": "ktoolbox.webui.naming_models",
+      "fields": [
+        {
+          "name": "migrated",
+          "type": "bool",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "backup_paths",
+          "type": "list[Path]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "naming",
+          "type": "ProjectNamingConfiguration",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "project_revision",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "ignored_environment_keys",
+          "type": "list[str]",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "NamingPreviewRequest": {
+      "module": "ktoolbox.webui.naming_models",
+      "fields": [
+        {
+          "name": "roots",
+          "type": "list[Path]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "source",
+          "type": "NamingConversionSource",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "NamingCreatorPreview": {
+      "module": "ktoolbox.webui.naming_models",
+      "fields": [
+        {
+          "name": "key",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "name",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "source",
+          "type": "Path",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "target",
+          "type": "Path",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "works",
+          "type": "int",
+          "required": false,
+          "default": "0",
+          "description": null
+        },
+        {
+          "name": "files",
+          "type": "int",
+          "required": false,
+          "default": "0",
+          "description": null
+        },
+        {
+          "name": "bytes",
+          "type": "int",
+          "required": false,
+          "default": "0",
+          "description": null
+        },
+        {
+          "name": "operations",
+          "type": "int",
+          "required": false,
+          "default": "0",
+          "description": null
+        },
+        {
+          "name": "skipped",
+          "type": "int",
+          "required": false,
+          "default": "0",
+          "description": null
+        },
+        {
+          "name": "conflicts",
+          "type": "list[str]",
+          "required": false,
+          "default": "Field(default_factory=list)",
+          "description": null
+        },
+        {
+          "name": "selectable",
+          "type": "bool",
+          "required": false,
+          "default": "True",
+          "description": null
+        }
+      ]
+    },
+    "NamingPreviewResponse": {
+      "module": "ktoolbox.webui.naming_models",
+      "fields": [
+        {
+          "name": "id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "revision",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "target_layout_revision",
+          "type": "str",
+          "required": false,
+          "default": "''",
+          "description": null
+        },
+        {
+          "name": "fingerprint",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "roots",
+          "type": "list[Path]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "creators",
+          "type": "list[NamingCreatorPreview]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "creator_count",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "work_count",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "file_count",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "total_bytes",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "skipped_count",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "conflict_count",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "source",
+          "type": "NamingConversionSource | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "resolves_pending_layout",
+          "type": "bool",
+          "required": false,
+          "default": "False",
+          "description": null
+        }
+      ]
+    },
+    "NamingApplyRequest": {
+      "module": "ktoolbox.webui.naming_models",
+      "fields": [
+        {
+          "name": "preview_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "selected_creators",
+          "type": "list[str]",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "NamingConversionProgress": {
+      "module": "ktoolbox.webui.naming_models",
+      "fields": [
+        {
+          "name": "completed_operations",
+          "type": "int",
+          "required": false,
+          "default": "0",
+          "description": null
+        },
+        {
+          "name": "total_operations",
+          "type": "int",
+          "required": false,
+          "default": "0",
+          "description": null
+        },
+        {
+          "name": "current_creator",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        }
+      ]
+    },
+    "NamingConversionResponse": {
+      "module": "ktoolbox.webui.naming_models",
+      "fields": [
+        {
+          "name": "id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "status",
+          "type": "NamingConversionStatus",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "preview",
+          "type": "NamingPreviewResponse",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "selected_creators",
+          "type": "list[str]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "progress",
+          "type": "NamingConversionProgress",
+          "required": false,
+          "default": "Field(default_factory=NamingConversionProgress)",
+          "description": null
+        },
+        {
+          "name": "error",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "StartupNoticeResponse": {
+      "module": "ktoolbox.webui.naming_models",
+      "fields": [
+        {
+          "name": "id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "kind",
+          "type": "Literal[('naming_migrated', 'legacy_layout_conversion')]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "payload",
+          "type": "dict[(str, object)]",
+          "required": false,
+          "default": "Field(default_factory=dict)",
+          "description": null
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "acknowledged_at",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "resolution",
+          "type": "StartupNoticeResolution | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "resolved_at",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        }
+      ]
+    },
+    "StartupNoticeResolveRequest": {
+      "module": "ktoolbox.webui.naming_models",
+      "fields": [
+        {
+          "name": "action",
+          "type": "StartupNoticeResolution",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "_Move": {
+      "module": "ktoolbox.webui.naming_service",
+      "fields": [
+        {
+          "name": "creator_key",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "source",
+          "type": "Path",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "target",
+          "type": "Path",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "_NamingLayout": {
+      "module": "ktoolbox.webui.naming_service",
+      "fields": [
+        {
+          "name": "naming",
+          "type": "ProjectNamingConfiguration",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "published_time",
+          "type": "PublishedTimePolicy",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "mode",
+          "type": "str",
+          "required": false,
+          "default": "'normalized'",
+          "description": null
+        }
+      ]
+    },
+    "_CreatorScan": {
+      "module": "ktoolbox.webui.naming_service",
+      "fields": [
+        {
+          "name": "selection_key",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "identity",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "name",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "source",
+          "type": "Path",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "target",
+          "type": "Path",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "works",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "files",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "bytes",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "skipped",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "conflicts",
+          "type": "list[str]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "moves",
+          "type": "list[_Move]",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "MCPMetadata": {
+      "module": "ktoolbox.webui.openapi_contract",
+      "fields": [
+        {
+          "name": "enabled",
+          "type": "bool",
+          "required": false,
+          "default": "False",
+          "description": null
+        },
+        {
+          "name": "name",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "scope",
+          "type": "Literal[('mcp:read', 'mcp:write')] | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "safety",
+          "type": "Safety | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "open_world",
+          "type": "bool",
+          "required": false,
+          "default": "False",
+          "description": null
+        }
+      ]
+    },
+    "OperationMetadata": {
+      "module": "ktoolbox.webui.openapi_contract",
+      "fields": [
+        {
+          "name": "summary",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "description",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "tag",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "public",
+          "type": "bool",
+          "required": false,
+          "default": "False",
+          "description": null
+        },
+        {
+          "name": "csrf",
+          "type": "bool",
+          "required": false,
+          "default": "False",
+          "description": null
+        },
+        {
+          "name": "mcp",
+          "type": "MCPMetadata",
+          "required": false,
+          "default": "MCPMetadata()",
+          "description": null
+        }
+      ]
+    },
+    "GeneratedWebUICredentials": {
+      "module": "ktoolbox.webui.server",
+      "fields": [
+        {
+          "name": "username",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "password",
+          "type": "str | None",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "WebUIServer": {
+      "module": "ktoolbox.webui.server",
+      "fields": [
+        {
+          "name": "_serve_task",
+          "type": "asyncio.Task[None] | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        }
+      ]
+    },
+    "TaskExecutionSnapshot": {
+      "module": "ktoolbox.webui.task_executor",
+      "fields": [
+        {
+          "name": "runtime",
+          "type": "RuntimeContext",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "project",
+          "type": "ProjectConfiguration",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "DownloadTaskSpec": {
+      "module": "ktoolbox.webui.task_models",
+      "fields": [
+        {
+          "name": "kind",
+          "type": "Literal['download']",
+          "required": false,
+          "default": "'download'",
+          "description": null
+        },
+        {
+          "name": "post",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "service",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "creator_id",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "post_id",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "revision_id",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "output",
+          "type": "Path",
+          "required": false,
+          "default": "Field(default='.', validate_default=True, description='Optional task output override. Omit it to use the project default output directory.')",
+          "description": null
+        },
+        {
+          "name": "dump_post_data",
+          "type": "bool",
+          "required": false,
+          "default": "True",
+          "description": null
+        },
+        {
+          "name": "download_file",
+          "type": "bool | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        }
+      ]
+    },
+    "SyncTaskSpec": {
+      "module": "ktoolbox.webui.task_models",
+      "fields": [
+        {
+          "name": "kind",
+          "type": "Literal['sync']",
+          "required": false,
+          "default": "'sync'",
+          "description": null
+        },
+        {
+          "name": "creators",
+          "type": "list[CreatorReference]",
+          "required": false,
+          "default": "Field(default_factory=list)",
+          "description": null
+        },
+        {
+          "name": "output",
+          "type": "Path",
+          "required": false,
+          "default": "Field(default='.', validate_default=True, description='Optional task output override. Omit it to use the project default output directory.')",
+          "description": null
+        },
+        {
+          "name": "save_creator_indices",
+          "type": "bool",
+          "required": false,
+          "default": "False",
+          "description": null
+        },
+        {
+          "name": "mix_posts",
+          "type": "bool | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "download_file",
+          "type": "bool | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "start_time",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "end_time",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "offset",
+          "type": "int",
+          "required": false,
+          "default": "Field(default=0, ge=0)",
+          "description": null
+        },
+        {
+          "name": "length",
+          "type": "int | None",
+          "required": false,
+          "default": "Field(default=None, ge=1)",
+          "description": null
+        },
+        {
+          "name": "keywords",
+          "type": "set[str]",
+          "required": false,
+          "default": "Field(default_factory=set)",
+          "description": null
+        },
+        {
+          "name": "keywords_exclude",
+          "type": "set[str]",
+          "required": false,
+          "default": "Field(default_factory=set)",
+          "description": null
+        }
+      ]
+    },
+    "TaskPresentationSnapshot": {
+      "module": "ktoolbox.webui.task_models",
+      "fields": [
+        {
+          "name": "target_key",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": "Non-executable labels captured when a task is created from Pawchive data.",
+          "min_length": "1",
+          "max_length": "1024"
+        },
+        {
+          "name": "title",
+          "type": "Annotated[(str, Field(max_length=500))] | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "creator_name",
+          "type": "Annotated[(str, Field(max_length=200))] | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        }
+      ]
+    },
+    "AutomaticCreatorWindowSnapshot": {
+      "module": "ktoolbox.webui.task_models",
+      "fields": [
+        {
+          "name": "creator_key",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "start_at",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "end_at",
+          "type": "datetime",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "timezone",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "baseline",
+          "type": "bool",
+          "required": false,
+          "default": "False",
+          "description": null
+        }
+      ]
+    },
+    "AutomaticTaskOrigin": {
+      "module": "ktoolbox.webui.task_models",
+      "fields": [
+        {
+          "name": "plan_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "plan_name",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "run_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "windows",
+          "type": "list[AutomaticCreatorWindowSnapshot]",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "TaskCreateRequest": {
+      "module": "ktoolbox.webui.task_models",
+      "fields": [
+        {
+          "name": "spec",
+          "type": "TaskSpec",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "presentation",
+          "type": "TaskPresentationSnapshot | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        }
+      ]
+    },
+    "ActiveDownload": {
+      "module": "ktoolbox.webui.task_models",
+      "fields": [
+        {
+          "name": "creator_key",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "filename",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "total",
+          "type": "int | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "completed",
+          "type": "int",
+          "required": false,
+          "default": "0",
+          "description": null
+        },
+        {
+          "name": "speed_bps",
+          "type": "float",
+          "required": false,
+          "default": "0",
+          "description": null
+        }
+      ]
+    },
+    "WaitingRetry": {
+      "module": "ktoolbox.webui.task_models",
+      "fields": [
+        {
+          "name": "creator_key",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "filename",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "retry_count",
+          "type": "int",
+          "required": false,
+          "default": "Field(ge=0)",
+          "description": null
+        },
+        {
+          "name": "status_code",
+          "type": "int | None",
+          "required": false,
+          "default": "Field(default=None, ge=100, le=599)",
+          "description": null
+        }
+      ]
+    },
+    "TaskProgress": {
+      "module": "ktoolbox.webui.task_models",
+      "fields": [
+        {
+          "name": "queued_files",
+          "type": "int",
+          "required": false,
+          "default": "0",
+          "description": null
+        },
+        {
+          "name": "processed_files",
+          "type": "int",
+          "required": false,
+          "default": "0",
+          "description": null
+        },
+        {
+          "name": "completed_files",
+          "type": "int",
+          "required": false,
+          "default": "0",
+          "description": null
+        },
+        {
+          "name": "existing_files",
+          "type": "int",
+          "required": false,
+          "default": "0",
+          "description": null
+        },
+        {
+          "name": "failed_files",
+          "type": "int",
+          "required": false,
+          "default": "0",
+          "description": null
+        },
+        {
+          "name": "transferred_bytes",
+          "type": "int",
+          "required": false,
+          "default": "0",
+          "description": null
+        },
+        {
+          "name": "total_bytes",
+          "type": "int | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "speed_bps",
+          "type": "float",
+          "required": false,
+          "default": "0",
+          "description": null
+        },
+        {
+          "name": "eta_seconds",
+          "type": "float | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "active_creators",
+          "type": "list[str]",
+          "required": false,
+          "default": "Field(default_factory=list)",
+          "description": null
+        },
+        {
+          "name": "active_downloads",
+          "type": "dict[(str, ActiveDownload)]",
+          "required": false,
+          "default": "Field(default_factory=dict)",
+          "description": null
+        },
+        {
+          "name": "waiting_retries",
+          "type": "dict[(str, WaitingRetry)]",
+          "required": false,
+          "default": "Field(default_factory=dict)",
+          "description": null
+        }
+      ]
+    },
+    "TaskRecord": {
+      "module": "ktoolbox.webui.task_models",
+      "fields": [
+        {
+          "name": "id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "kind",
+          "type": "Literal[('download', 'sync')]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "status",
+          "type": "TaskStatus",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "spec",
+          "type": "TaskSpec",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "presentation",
+          "type": "TaskPresentationSnapshot | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "automatic_origin",
+          "type": "AutomaticTaskOrigin | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "position",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "revision",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "progress",
+          "type": "TaskProgress",
+          "required": false,
+          "default": "Field(default_factory=TaskProgress)",
+          "description": null
+        },
+        {
+          "name": "error",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "failure",
+          "type": "TaskFailureReport | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "blocked_by",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "TaskAttempt": {
+      "module": "ktoolbox.webui.task_models",
+      "fields": [
+        {
+          "name": "id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "task_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "sequence",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "status",
+          "type": "TaskStatus",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "spec",
+          "type": "TaskSpec",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "configuration",
+          "type": "dict[(str, object)]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "started_at",
+          "type": "datetime",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "finished_at",
+          "type": "datetime | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "error",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "failure",
+          "type": "TaskFailureReport | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "result",
+          "type": "TaskExecutionResult | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        }
+      ]
+    },
+    "CreatorTaskExecutionResult": {
+      "module": "ktoolbox.webui.task_models",
+      "fields": [
+        {
+          "name": "creator_key",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "accepted_post_ids",
+          "type": "list[str]",
+          "required": false,
+          "default": "Field(default_factory=list)",
+          "description": null
+        },
+        {
+          "name": "generation_successful",
+          "type": "bool",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "download_failures",
+          "type": "int",
+          "required": false,
+          "default": "Field(default=0, ge=0)",
+          "description": null
+        }
+      ]
+    },
+    "TaskExecutionResult": {
+      "module": "ktoolbox.webui.task_models",
+      "fields": [
+        {
+          "name": "creators",
+          "type": "list[CreatorTaskExecutionResult]",
+          "required": false,
+          "default": "Field(default_factory=list)",
+          "description": null
+        }
+      ]
+    },
+    "TaskEvent": {
+      "module": "ktoolbox.webui.task_models",
+      "fields": [
+        {
+          "name": "id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "task_id",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "event_type",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "resource",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "resource_id",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        },
+        {
+          "name": "data",
+          "type": "dict[(str, object)]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "TaskArtifact": {
+      "module": "ktoolbox.webui.task_models",
+      "fields": [
+        {
+          "name": "path",
+          "type": "Path",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "size",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "mtime_ns",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "removable",
+          "type": "bool",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "reason",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        }
+      ]
+    },
+    "TaskCleanupPreview": {
+      "module": "ktoolbox.webui.task_models",
+      "fields": [
+        {
+          "name": "task_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "artifacts",
+          "type": "list[TaskArtifact]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "removable_files",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "removable_bytes",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "TaskUpdateRequest": {
+      "module": "ktoolbox.webui.task_models",
+      "fields": [
+        {
+          "name": "spec",
+          "type": "TaskSpec",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "presentation",
+          "type": "TaskPresentationSnapshot | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        }
+      ]
+    },
+    "TaskDeleteRequest": {
+      "module": "ktoolbox.webui.task_models",
+      "fields": [
+        {
+          "name": "delete_output",
+          "type": "bool",
+          "required": false,
+          "default": "False",
+          "description": null
+        },
+        {
+          "name": "confirmation",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "description": null
+        }
+      ]
+    },
+    "_ProgressWrite": {
+      "module": "ktoolbox.webui.task_reporter",
+      "fields": [
+        {
+          "name": "event_type",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "data",
+          "type": "dict[(str, object)]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "progress",
+          "type": "TaskProgress",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "_ArtifactWrite": {
+      "module": "ktoolbox.webui.task_reporter",
+      "fields": [
+        {
+          "name": "path",
+          "type": "Path",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "TaskResources": {
+      "module": "ktoolbox.webui.task_scheduler",
+      "fields": [
+        {
+          "name": "output",
+          "type": "Path",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "creators",
+          "type": "frozenset[str]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "posts",
+          "type": "frozenset[str]",
+          "required": true,
+          "default": null,
+          "description": null
+        }
+      ]
+    },
+    "RunningTask": {
+      "module": "ktoolbox.webui.task_scheduler",
+      "fields": [
+        {
+          "name": "task",
+          "type": "asyncio.Task[None]",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "resources",
+          "type": "TaskResources",
+          "required": true,
+          "default": null,
+          "description": null
+        },
+        {
+          "name": "requested_final_status",
+          "type": "TaskStatus",
+          "required": false,
+          "default": "TaskStatus.interrupted",
+          "description": null
+        }
+      ]
+    }
+  }
+}

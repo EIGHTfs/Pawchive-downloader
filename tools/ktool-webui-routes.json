@@ -1,0 +1,3367 @@
+{
+  "meta": {
+    "generator": "tools/extract-ktool-apis.py",
+    "source_repo": "/volume1/@appdata/DeepSeekHarness-NAS/0.1.6-alpha.1/工作区/Pawchive-downloader/.probe-ktoolbox",
+    "extracted_at": "2026-09-28T01:38:21Z",
+    "python_version": "3.8.15"
+  },
+  "count": 85,
+  "routes": [
+    {
+      "path": "",
+      "full_path": "/api/v1/filesystem",
+      "prefix": "/api/v1/filesystem",
+      "method": "GET",
+      "module": "ktoolbox.webui.filesystem_routes",
+      "handler": "browse_filesystem",
+      "summary": null,
+      "status_code": null,
+      "response_model": "FilesystemBrowseResponse",
+      "response_fields": [
+        "scope",
+        "mode",
+        "path",
+        "project_relative_path",
+        "parent",
+        "separator",
+        "breadcrumbs",
+        "locations",
+        "entries",
+        "suggested_name",
+        "offset",
+        "limit",
+        "has_more"
+      ],
+      "params": [
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "scope",
+          "type": "FilesystemScope",
+          "required": false,
+          "default": "'project'",
+          "in": "query"
+        },
+        {
+          "name": "mode",
+          "type": "FilesystemMode",
+          "required": false,
+          "default": "'directory'",
+          "in": "query"
+        },
+        {
+          "name": "path",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "in": "query"
+        },
+        {
+          "name": "search",
+          "type": "str",
+          "required": false,
+          "default": "Query(default='', max_length=256)",
+          "in": "query"
+        },
+        {
+          "name": "include_hidden",
+          "type": "bool",
+          "required": false,
+          "default": "False",
+          "in": "query"
+        },
+        {
+          "name": "offset",
+          "type": "int",
+          "required": false,
+          "default": "Query(default=0, ge=0)",
+          "in": "query"
+        },
+        {
+          "name": "limit",
+          "type": "int",
+          "required": false,
+          "default": "Query(default=100, ge=1, le=200)",
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/api/v1/about",
+      "full_path": "/api/v1/about",
+      "prefix": "",
+      "method": "GET",
+      "module": "ktoolbox.webui.app",
+      "handler": "get_about",
+      "summary": null,
+      "status_code": null,
+      "response_model": "AboutResponse",
+      "response_fields": [
+        "name",
+        "version",
+        "description",
+        "license",
+        "authors",
+        "python_version",
+        "urls"
+      ],
+      "params": [
+        {
+          "name": "_",
+          "type": "Annotated[(WebUISession, Depends(require_session))]",
+          "required": true,
+          "default": null,
+          "in": "depends"
+        }
+      ]
+    },
+    {
+      "path": "/api/v1/health",
+      "full_path": "/api/v1/health",
+      "prefix": "",
+      "method": "GET",
+      "module": "ktoolbox.webui.app",
+      "handler": "health",
+      "summary": null,
+      "status_code": null,
+      "response_model": "HealthResponse",
+      "response_fields": [
+        "status"
+      ],
+      "params": []
+    },
+    {
+      "path": "/api/v1/project",
+      "full_path": "/api/v1/project",
+      "prefix": "",
+      "method": "GET",
+      "module": "ktoolbox.webui.app",
+      "handler": "project",
+      "summary": null,
+      "status_code": null,
+      "response_model": "ProjectSummaryResponse",
+      "response_fields": [
+        "name",
+        "root",
+        "project_config",
+        "default_output",
+        "resolved_default_output",
+        "dotenv_files",
+        "version",
+        "published_target_timezone"
+      ],
+      "params": [
+        {
+          "name": "_",
+          "type": "Annotated[(WebUISession, Depends(require_session))]",
+          "required": true,
+          "default": null,
+          "in": "depends"
+        }
+      ]
+    },
+    {
+      "path": "/api/v1/session",
+      "full_path": "/api/v1/session",
+      "prefix": "",
+      "method": "GET",
+      "module": "ktoolbox.webui.app",
+      "handler": "current_session",
+      "summary": null,
+      "status_code": null,
+      "response_model": "SessionResponse",
+      "response_fields": [
+        "authenticated",
+        "username",
+        "csrf_token",
+        "created_at"
+      ],
+      "params": [
+        {
+          "name": "session",
+          "type": "Annotated[(WebUISession, Depends(require_session))]",
+          "required": true,
+          "default": null,
+          "in": "depends"
+        }
+      ]
+    },
+    {
+      "path": "/api/v1/session/login",
+      "full_path": "/api/v1/session/login",
+      "prefix": "",
+      "method": "POST",
+      "module": "ktoolbox.webui.app",
+      "handler": "login",
+      "summary": null,
+      "status_code": null,
+      "response_model": "SessionResponse",
+      "response_fields": [
+        "authenticated",
+        "username",
+        "csrf_token",
+        "created_at"
+      ],
+      "params": [
+        {
+          "name": "payload",
+          "type": "LoginRequest",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/api/v1/session/logout",
+      "full_path": "/api/v1/session/logout",
+      "prefix": "",
+      "method": "POST",
+      "module": "ktoolbox.webui.app",
+      "handler": "logout",
+      "summary": null,
+      "status_code": "status.HTTP_204_NO_CONTENT",
+      "response_model": null,
+      "response_fields": null,
+      "params": [
+        {
+          "name": "_",
+          "type": "Annotated[(WebUISession, Depends(require_csrf))]",
+          "required": true,
+          "default": null,
+          "in": "depends"
+        }
+      ]
+    },
+    {
+      "path": "/blockers",
+      "full_path": "/api/v1/blockers",
+      "prefix": "/api/v1",
+      "method": "GET",
+      "module": "ktoolbox.webui.project_routes",
+      "handler": "list_blockers",
+      "summary": null,
+      "status_code": null,
+      "response_model": "BlockerListResponse",
+      "response_fields": [
+        "blockers"
+      ],
+      "params": [
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/blockers",
+      "full_path": "/api/v1/blockers",
+      "prefix": "/api/v1",
+      "method": "PUT",
+      "module": "ktoolbox.webui.project_routes",
+      "handler": "replace_blockers",
+      "summary": null,
+      "status_code": null,
+      "response_model": "BlockerListResponse",
+      "response_fields": [
+        "blockers"
+      ],
+      "params": [
+        {
+          "name": "blockers",
+          "type": "list[BlockerSpec]",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "_",
+          "type": "CsrfDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/config/dotenv/{name}",
+      "full_path": "/api/v1/config/dotenv/{name}",
+      "prefix": "/api/v1",
+      "method": "GET",
+      "module": "ktoolbox.webui.project_routes",
+      "handler": "get_dotenv",
+      "summary": null,
+      "status_code": null,
+      "response_model": "TextDocumentResponse",
+      "response_fields": [
+        "name",
+        "path",
+        "content",
+        "revision"
+      ],
+      "params": [
+        {
+          "name": "name",
+          "type": "Literal[('dotenv', 'production')]",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/config/dotenv/{name}",
+      "full_path": "/api/v1/config/dotenv/{name}",
+      "prefix": "/api/v1",
+      "method": "PATCH",
+      "module": "ktoolbox.webui.project_routes",
+      "handler": "patch_dotenv",
+      "summary": null,
+      "status_code": null,
+      "response_model": "TextDocumentResponse",
+      "response_fields": [
+        "name",
+        "path",
+        "content",
+        "revision"
+      ],
+      "params": [
+        {
+          "name": "name",
+          "type": "Literal[('dotenv', 'production')]",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "payload",
+          "type": "DotenvPatchRequest",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "_",
+          "type": "CsrfDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "if_match",
+          "type": "IfMatch",
+          "required": false,
+          "default": "None",
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/config/dotenv/{name}",
+      "full_path": "/api/v1/config/dotenv/{name}",
+      "prefix": "/api/v1",
+      "method": "PUT",
+      "module": "ktoolbox.webui.project_routes",
+      "handler": "replace_dotenv",
+      "summary": null,
+      "status_code": null,
+      "response_model": "TextDocumentResponse",
+      "response_fields": [
+        "name",
+        "path",
+        "content",
+        "revision"
+      ],
+      "params": [
+        {
+          "name": "name",
+          "type": "Literal[('dotenv', 'production')]",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "payload",
+          "type": "TextDocumentUpdate",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "_",
+          "type": "CsrfDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "if_match",
+          "type": "IfMatch",
+          "required": false,
+          "default": "None",
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/config/dotenv/{name}/validate",
+      "full_path": "/api/v1/config/dotenv/{name}/validate",
+      "prefix": "/api/v1",
+      "method": "POST",
+      "module": "ktoolbox.webui.project_routes",
+      "handler": "validate_dotenv",
+      "summary": null,
+      "status_code": null,
+      "response_model": "ValidationResponse",
+      "response_fields": [
+        "valid"
+      ],
+      "params": [
+        {
+          "name": "name",
+          "type": "Literal[('dotenv', 'production')]",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "payload",
+          "type": "TextDocumentUpdate",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/config/example",
+      "full_path": "/api/v1/config/example",
+      "prefix": "/api/v1",
+      "method": "GET",
+      "module": "ktoolbox.webui.project_routes",
+      "handler": "example_configuration",
+      "summary": null,
+      "status_code": null,
+      "response_model": null,
+      "response_fields": null,
+      "params": [
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/config/project",
+      "full_path": "/api/v1/config/project",
+      "prefix": "/api/v1",
+      "method": "GET",
+      "module": "ktoolbox.webui.project_routes",
+      "handler": "get_project_config",
+      "summary": null,
+      "status_code": null,
+      "response_model": "ProjectDocumentResponse",
+      "response_fields": [
+        "path",
+        "content",
+        "revision",
+        "configuration"
+      ],
+      "params": [
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/config/project",
+      "full_path": "/api/v1/config/project",
+      "prefix": "/api/v1",
+      "method": "PUT",
+      "module": "ktoolbox.webui.project_routes",
+      "handler": "replace_project_config",
+      "summary": null,
+      "status_code": null,
+      "response_model": "ProjectDocumentResponse",
+      "response_fields": [
+        "path",
+        "content",
+        "revision",
+        "configuration"
+      ],
+      "params": [
+        {
+          "name": "payload",
+          "type": "TextDocumentUpdate",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "_",
+          "type": "CsrfDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "if_match",
+          "type": "IfMatch",
+          "required": false,
+          "default": "None",
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/config/project/validate",
+      "full_path": "/api/v1/config/project/validate",
+      "prefix": "/api/v1",
+      "method": "POST",
+      "module": "ktoolbox.webui.project_routes",
+      "handler": "validate_project_config",
+      "summary": null,
+      "status_code": null,
+      "response_model": "ValidationResponse",
+      "response_fields": [
+        "valid"
+      ],
+      "params": [
+        {
+          "name": "payload",
+          "type": "TextDocumentUpdate",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/config/schema",
+      "full_path": "/api/v1/config/schema",
+      "prefix": "/api/v1",
+      "method": "GET",
+      "module": "ktoolbox.webui.project_routes",
+      "handler": "config_schema",
+      "summary": null,
+      "status_code": null,
+      "response_model": "ConfigSchemaResponse",
+      "response_fields": [
+        "locale",
+        "sections",
+        "fields"
+      ],
+      "params": [
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "locale",
+          "type": "Locale",
+          "required": false,
+          "default": "'en'",
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/creators",
+      "full_path": "/api/v1/pawchive/creators",
+      "prefix": "/api/v1/pawchive",
+      "method": "GET",
+      "module": "ktoolbox.webui.pawchive_routes",
+      "handler": "creators",
+      "summary": null,
+      "status_code": null,
+      "response_model": "list[CreatorSearchItemResponse]",
+      "response_fields": [
+        "avatar",
+        "banner"
+      ],
+      "params": [
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "creator_id",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "in": "query"
+        },
+        {
+          "name": "name",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "in": "query"
+        },
+        {
+          "name": "service",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/creators",
+      "full_path": "/api/v1/creators",
+      "prefix": "/api/v1",
+      "method": "GET",
+      "module": "ktoolbox.webui.project_routes",
+      "handler": "list_creators",
+      "summary": null,
+      "status_code": null,
+      "response_model": "list[CreatorRosterItemResponse]",
+      "response_fields": [
+        "name",
+        "avatar",
+        "banner"
+      ],
+      "params": [
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/creators",
+      "full_path": "/api/v1/creators",
+      "prefix": "/api/v1",
+      "method": "POST",
+      "module": "ktoolbox.webui.project_routes",
+      "handler": "add_creator",
+      "summary": null,
+      "status_code": "status.HTTP_201_CREATED",
+      "response_model": "CreatorReference",
+      "response_fields": null,
+      "params": [
+        {
+          "name": "creator",
+          "type": "CreatorReference",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "_",
+          "type": "CsrfDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/creators/{platform}/{creator_id}/avatar",
+      "full_path": "/api/v1/media/creators/{platform}/{creator_id}/avatar",
+      "prefix": "/api/v1/media",
+      "method": "GET",
+      "module": "ktoolbox.webui.media_routes",
+      "handler": "creator_avatar",
+      "summary": null,
+      "status_code": null,
+      "response_model": null,
+      "response_fields": null,
+      "params": [
+        {
+          "name": "platform",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "creator_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "variant",
+          "type": "VariantQuery",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/creators/{platform}/{creator_id}/banner",
+      "full_path": "/api/v1/media/creators/{platform}/{creator_id}/banner",
+      "prefix": "/api/v1/media",
+      "method": "GET",
+      "module": "ktoolbox.webui.media_routes",
+      "handler": "creator_banner",
+      "summary": null,
+      "status_code": null,
+      "response_model": null,
+      "response_fields": null,
+      "params": [
+        {
+          "name": "platform",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "creator_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "variant",
+          "type": "VariantQuery",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/creators/{service}/{creator_id}",
+      "full_path": "/api/v1/creators/{service}/{creator_id}",
+      "prefix": "/api/v1",
+      "method": "DELETE",
+      "module": "ktoolbox.webui.project_routes",
+      "handler": "delete_creator",
+      "summary": null,
+      "status_code": null,
+      "response_model": "CreatorReference",
+      "response_fields": null,
+      "params": [
+        {
+          "name": "service",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "creator_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "_",
+          "type": "CsrfDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/creators/{service}/{creator_id}",
+      "full_path": "/api/v1/creators/{service}/{creator_id}",
+      "prefix": "/api/v1",
+      "method": "PUT",
+      "module": "ktoolbox.webui.project_routes",
+      "handler": "update_creator",
+      "summary": null,
+      "status_code": null,
+      "response_model": "CreatorReference",
+      "response_fields": null,
+      "params": [
+        {
+          "name": "service",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "creator_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "payload",
+          "type": "CreatorUpdateRequest",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "_",
+          "type": "CsrfDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/directories",
+      "full_path": "/api/v1/filesystem/directories",
+      "prefix": "/api/v1/filesystem",
+      "method": "DELETE",
+      "module": "ktoolbox.webui.filesystem_routes",
+      "handler": "delete_directory",
+      "summary": null,
+      "status_code": "status.HTTP_204_NO_CONTENT",
+      "response_model": null,
+      "response_fields": null,
+      "params": [
+        {
+          "name": "payload",
+          "type": "FilesystemDeleteDirectoryRequest",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "_",
+          "type": "CsrfDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/directories",
+      "full_path": "/api/v1/filesystem/directories",
+      "prefix": "/api/v1/filesystem",
+      "method": "POST",
+      "module": "ktoolbox.webui.filesystem_routes",
+      "handler": "create_directory",
+      "summary": null,
+      "status_code": "status.HTTP_201_CREATED",
+      "response_model": "FilesystemEntryResponse",
+      "response_fields": [
+        "name",
+        "path",
+        "project_relative_path",
+        "kind",
+        "is_symlink",
+        "navigable",
+        "deletable"
+      ],
+      "params": [
+        {
+          "name": "payload",
+          "type": "FilesystemCreateDirectoryRequest",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "_",
+          "type": "CsrfDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/events",
+      "full_path": "/api/v1/events",
+      "prefix": "/api/v1",
+      "method": "GET",
+      "module": "ktoolbox.webui.task_routes",
+      "handler": "event_stream",
+      "summary": null,
+      "status_code": null,
+      "response_model": null,
+      "response_fields": null,
+      "params": [
+        {
+          "name": "_",
+          "type": "Annotated[(WebUISession, Depends(require_session))]",
+          "required": true,
+          "default": null,
+          "in": "depends"
+        },
+        {
+          "name": "events_store",
+          "type": "Annotated[(WebUIEventStore, Depends(event_store))]",
+          "required": true,
+          "default": null,
+          "in": "depends"
+        },
+        {
+          "name": "last_event_id",
+          "type": "Annotated[(str | None, Header())]",
+          "required": false,
+          "default": "None",
+          "in": "header"
+        },
+        {
+          "name": "after",
+          "type": "Annotated[(int | None, Query(ge=0))]",
+          "required": false,
+          "default": "None",
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/files",
+      "full_path": "/api/v1/media/files",
+      "prefix": "/api/v1/media",
+      "method": "GET",
+      "module": "ktoolbox.webui.media_routes",
+      "handler": "media_file",
+      "summary": null,
+      "status_code": null,
+      "response_model": null,
+      "response_fields": null,
+      "params": [
+        {
+          "name": "path",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "variant",
+          "type": "VariantQuery",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/mcp",
+      "full_path": "/mcp",
+      "prefix": "",
+      "method": "GET",
+      "module": "ktoolbox.webui.app",
+      "handler": "mcp_frontend",
+      "summary": null,
+      "status_code": null,
+      "response_model": null,
+      "response_fields": null,
+      "params": []
+    },
+    {
+      "path": "/mcp/config/{name}",
+      "full_path": "/api/v1/mcp/config/{name}",
+      "prefix": "/api/v1",
+      "method": "PATCH",
+      "module": "ktoolbox.webui.mcp_routes",
+      "handler": "patch_mcp_configuration",
+      "summary": null,
+      "status_code": null,
+      "response_model": "ConfigSchemaResponse",
+      "response_fields": [
+        "locale",
+        "sections",
+        "fields"
+      ],
+      "params": [
+        {
+          "name": "name",
+          "type": "Literal[('dotenv', 'production')]",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "payload",
+          "type": "MCPConfigurationPatchRequest",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "_",
+          "type": "CsrfDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "locale",
+          "type": "Locale",
+          "required": false,
+          "default": "'en'",
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/mcp/files",
+      "full_path": "/api/v1/mcp/files",
+      "prefix": "/api/v1",
+      "method": "GET",
+      "module": "ktoolbox.webui.mcp_routes",
+      "handler": "browse_project_files",
+      "summary": null,
+      "status_code": null,
+      "response_model": "FilesystemBrowseResponse",
+      "response_fields": [
+        "scope",
+        "mode",
+        "path",
+        "project_relative_path",
+        "parent",
+        "separator",
+        "breadcrumbs",
+        "locations",
+        "entries",
+        "suggested_name",
+        "offset",
+        "limit",
+        "has_more"
+      ],
+      "params": [
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "mode",
+          "type": "FilesystemMode",
+          "required": false,
+          "default": "'directory'",
+          "in": "query"
+        },
+        {
+          "name": "path",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "in": "query"
+        },
+        {
+          "name": "search",
+          "type": "str",
+          "required": false,
+          "default": "Query(default='', max_length=256)",
+          "in": "query"
+        },
+        {
+          "name": "offset",
+          "type": "int",
+          "required": false,
+          "default": "Query(default=0, ge=0)",
+          "in": "query"
+        },
+        {
+          "name": "limit",
+          "type": "int",
+          "required": false,
+          "default": "Query(default=100, ge=1, le=200)",
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/mcp/pawchive/posts/{service}/{creator_id}/{post_id}",
+      "full_path": "/api/v1/mcp/pawchive/posts/{service}/{creator_id}/{post_id}",
+      "prefix": "/api/v1",
+      "method": "GET",
+      "module": "ktoolbox.webui.mcp_routes",
+      "handler": "get_mcp_work",
+      "summary": null,
+      "status_code": null,
+      "response_model": "MCPPostResponse | MCPRevisionResponse",
+      "response_fields": null,
+      "params": [
+        {
+          "name": "service",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "creator_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "post_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "revision_id",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "in": "query"
+        },
+        {
+          "name": "include_content",
+          "type": "bool",
+          "required": false,
+          "default": "False",
+          "in": "query"
+        },
+        {
+          "name": "content_limit",
+          "type": "int",
+          "required": false,
+          "default": "Query(default=12000, ge=1, le=20000)",
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/mcp/status",
+      "full_path": "/api/v1/mcp/status",
+      "prefix": "/api/v1",
+      "method": "GET",
+      "module": "ktoolbox.webui.mcp_routes",
+      "handler": "mcp_status",
+      "summary": null,
+      "status_code": null,
+      "response_model": "MCPStatusResponse",
+      "response_fields": [
+        "running",
+        "endpoint_path",
+        "openapi_path",
+        "transport",
+        "tool_count"
+      ],
+      "params": [
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/mcp/tasks/{task_id}",
+      "full_path": "/api/v1/mcp/tasks/{task_id}",
+      "prefix": "/api/v1",
+      "method": "DELETE",
+      "module": "ktoolbox.webui.mcp_routes",
+      "handler": "delete_task_record",
+      "summary": null,
+      "status_code": null,
+      "response_model": "TaskCleanupPreview",
+      "response_fields": [
+        "task_id",
+        "artifacts",
+        "removable_files",
+        "removable_bytes"
+      ],
+      "params": [
+        {
+          "name": "task_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "_",
+          "type": "CsrfDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/mcp/tokens",
+      "full_path": "/api/v1/mcp/tokens",
+      "prefix": "/api/v1",
+      "method": "GET",
+      "module": "ktoolbox.webui.mcp_routes",
+      "handler": "list_mcp_tokens",
+      "summary": null,
+      "status_code": null,
+      "response_model": "list[MCPTokenResponse]",
+      "response_fields": [
+        "id",
+        "name",
+        "username",
+        "permission",
+        "scopes",
+        "created_at",
+        "expires_at",
+        "last_used_at",
+        "revoked_at",
+        "active"
+      ],
+      "params": [
+        {
+          "name": "session",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/mcp/tokens",
+      "full_path": "/api/v1/mcp/tokens",
+      "prefix": "/api/v1",
+      "method": "POST",
+      "module": "ktoolbox.webui.mcp_routes",
+      "handler": "create_mcp_token",
+      "summary": null,
+      "status_code": "status.HTTP_201_CREATED",
+      "response_model": "MCPTokenCreatedResponse",
+      "response_fields": [
+        "id",
+        "name",
+        "username",
+        "permission",
+        "scopes",
+        "created_at",
+        "expires_at",
+        "last_used_at",
+        "revoked_at",
+        "active",
+        "token"
+      ],
+      "params": [
+        {
+          "name": "payload",
+          "type": "MCPTokenCreateRequest",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "session",
+          "type": "CsrfDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/mcp/tokens/{token_id}/revoke",
+      "full_path": "/api/v1/mcp/tokens/{token_id}/revoke",
+      "prefix": "/api/v1",
+      "method": "POST",
+      "module": "ktoolbox.webui.mcp_routes",
+      "handler": "revoke_mcp_token",
+      "summary": null,
+      "status_code": null,
+      "response_model": "MCPTokenResponse",
+      "response_fields": [
+        "id",
+        "name",
+        "username",
+        "permission",
+        "scopes",
+        "created_at",
+        "expires_at",
+        "last_used_at",
+        "revoked_at",
+        "active"
+      ],
+      "params": [
+        {
+          "name": "token_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "session",
+          "type": "CsrfDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/mcp/tools",
+      "full_path": "/api/v1/mcp/tools",
+      "prefix": "/api/v1",
+      "method": "GET",
+      "module": "ktoolbox.webui.mcp_routes",
+      "handler": "list_mcp_tools",
+      "summary": null,
+      "status_code": null,
+      "response_model": "list[MCPToolResponse]",
+      "response_fields": [
+        "name",
+        "operation_id",
+        "description",
+        "category",
+        "scope",
+        "safety",
+        "open_world"
+      ],
+      "params": [
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/naming",
+      "full_path": "/api/v1/naming",
+      "prefix": "/api/v1",
+      "method": "GET",
+      "module": "ktoolbox.webui.naming_routes",
+      "handler": "get_naming",
+      "summary": null,
+      "status_code": null,
+      "response_model": "NamingConfigurationResponse",
+      "response_fields": [
+        "default_output",
+        "resolved_default_output",
+        "naming",
+        "published_time",
+        "revision",
+        "conversion_pending"
+      ],
+      "params": [
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "service",
+          "type": "NamingServiceDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/naming",
+      "full_path": "/api/v1/naming",
+      "prefix": "/api/v1",
+      "method": "PATCH",
+      "module": "ktoolbox.webui.naming_routes",
+      "handler": "update_naming",
+      "summary": null,
+      "status_code": null,
+      "response_model": "NamingConfigurationResponse",
+      "response_fields": [
+        "default_output",
+        "resolved_default_output",
+        "naming",
+        "published_time",
+        "revision",
+        "conversion_pending"
+      ],
+      "params": [
+        {
+          "name": "payload",
+          "type": "NamingUpdateRequest",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "_",
+          "type": "CsrfDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "service",
+          "type": "NamingServiceDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/naming/apply",
+      "full_path": "/api/v1/naming/apply",
+      "prefix": "/api/v1",
+      "method": "POST",
+      "module": "ktoolbox.webui.naming_routes",
+      "handler": "apply_naming",
+      "summary": null,
+      "status_code": "status.HTTP_202_ACCEPTED",
+      "response_model": "NamingConversionResponse",
+      "response_fields": [
+        "id",
+        "status",
+        "preview",
+        "selected_creators",
+        "progress",
+        "error",
+        "created_at",
+        "updated_at"
+      ],
+      "params": [
+        {
+          "name": "payload",
+          "type": "NamingApplyRequest",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "_",
+          "type": "CsrfDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "service",
+          "type": "NamingServiceDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/naming/conversions",
+      "full_path": "/api/v1/naming/conversions",
+      "prefix": "/api/v1",
+      "method": "GET",
+      "module": "ktoolbox.webui.naming_routes",
+      "handler": "list_naming_conversions",
+      "summary": null,
+      "status_code": null,
+      "response_model": "list[NamingConversionResponse]",
+      "response_fields": [
+        "id",
+        "status",
+        "preview",
+        "selected_creators",
+        "progress",
+        "error",
+        "created_at",
+        "updated_at"
+      ],
+      "params": [
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "service",
+          "type": "NamingServiceDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/naming/conversions/{conversion_id}",
+      "full_path": "/api/v1/naming/conversions/{conversion_id}",
+      "prefix": "/api/v1",
+      "method": "DELETE",
+      "module": "ktoolbox.webui.naming_routes",
+      "handler": "delete_naming_conversion",
+      "summary": null,
+      "status_code": "status.HTTP_204_NO_CONTENT",
+      "response_model": null,
+      "response_fields": null,
+      "params": [
+        {
+          "name": "conversion_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "_",
+          "type": "CsrfDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "service",
+          "type": "NamingServiceDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/naming/conversions/{conversion_id}",
+      "full_path": "/api/v1/naming/conversions/{conversion_id}",
+      "prefix": "/api/v1",
+      "method": "GET",
+      "module": "ktoolbox.webui.naming_routes",
+      "handler": "get_naming_conversion",
+      "summary": null,
+      "status_code": null,
+      "response_model": "NamingConversionResponse",
+      "response_fields": [
+        "id",
+        "status",
+        "preview",
+        "selected_creators",
+        "progress",
+        "error",
+        "created_at",
+        "updated_at"
+      ],
+      "params": [
+        {
+          "name": "conversion_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "service",
+          "type": "NamingServiceDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/naming/conversions/{conversion_id}/cancel",
+      "full_path": "/api/v1/naming/conversions/{conversion_id}/cancel",
+      "prefix": "/api/v1",
+      "method": "POST",
+      "module": "ktoolbox.webui.naming_routes",
+      "handler": "cancel_naming_conversion",
+      "summary": null,
+      "status_code": null,
+      "response_model": "NamingConversionResponse",
+      "response_fields": [
+        "id",
+        "status",
+        "preview",
+        "selected_creators",
+        "progress",
+        "error",
+        "created_at",
+        "updated_at"
+      ],
+      "params": [
+        {
+          "name": "conversion_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "_",
+          "type": "CsrfDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "service",
+          "type": "NamingServiceDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/naming/conversions/{conversion_id}/pause",
+      "full_path": "/api/v1/naming/conversions/{conversion_id}/pause",
+      "prefix": "/api/v1",
+      "method": "POST",
+      "module": "ktoolbox.webui.naming_routes",
+      "handler": "pause_naming_conversion",
+      "summary": null,
+      "status_code": null,
+      "response_model": "NamingConversionResponse",
+      "response_fields": [
+        "id",
+        "status",
+        "preview",
+        "selected_creators",
+        "progress",
+        "error",
+        "created_at",
+        "updated_at"
+      ],
+      "params": [
+        {
+          "name": "conversion_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "_",
+          "type": "CsrfDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "service",
+          "type": "NamingServiceDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/naming/conversions/{conversion_id}/resume",
+      "full_path": "/api/v1/naming/conversions/{conversion_id}/resume",
+      "prefix": "/api/v1",
+      "method": "POST",
+      "module": "ktoolbox.webui.naming_routes",
+      "handler": "resume_naming_conversion",
+      "summary": null,
+      "status_code": null,
+      "response_model": "NamingConversionResponse",
+      "response_fields": [
+        "id",
+        "status",
+        "preview",
+        "selected_creators",
+        "progress",
+        "error",
+        "created_at",
+        "updated_at"
+      ],
+      "params": [
+        {
+          "name": "conversion_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "_",
+          "type": "CsrfDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "service",
+          "type": "NamingServiceDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/naming/layout-versions",
+      "full_path": "/api/v1/naming/layout-versions",
+      "prefix": "/api/v1",
+      "method": "GET",
+      "module": "ktoolbox.webui.naming_routes",
+      "handler": "get_naming_layout_versions",
+      "summary": null,
+      "status_code": null,
+      "response_model": "list[NamingLayoutVersionResponse]",
+      "response_fields": [
+        "id",
+        "revision",
+        "naming",
+        "published_time",
+        "origin",
+        "created_at",
+        "is_current"
+      ],
+      "params": [
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "service",
+          "type": "NamingServiceDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/naming/legacy-context",
+      "full_path": "/api/v1/naming/legacy-context",
+      "prefix": "/api/v1",
+      "method": "GET",
+      "module": "ktoolbox.webui.naming_routes",
+      "handler": "get_naming_legacy_context",
+      "summary": null,
+      "status_code": null,
+      "response_model": "NamingLegacyContextResponse",
+      "response_fields": [
+        "roots",
+        "conversion_pending"
+      ],
+      "params": [
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "service",
+          "type": "NamingServiceDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/naming/legacy-migration",
+      "full_path": "/api/v1/naming/legacy-migration",
+      "prefix": "/api/v1",
+      "method": "GET",
+      "module": "ktoolbox.webui.naming_routes",
+      "handler": "get_legacy_naming_migration",
+      "summary": null,
+      "status_code": null,
+      "response_model": "LegacyNamingMigrationResponse",
+      "response_fields": [
+        "pending",
+        "project_revision",
+        "sources",
+        "fields",
+        "ignored_environment_keys"
+      ],
+      "params": [
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "service",
+          "type": "NamingServiceDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/naming/legacy-migration/apply",
+      "full_path": "/api/v1/naming/legacy-migration/apply",
+      "prefix": "/api/v1",
+      "method": "POST",
+      "module": "ktoolbox.webui.naming_routes",
+      "handler": "apply_legacy_naming_migration",
+      "summary": null,
+      "status_code": null,
+      "response_model": "LegacyNamingMigrationResultResponse",
+      "response_fields": [
+        "migrated",
+        "backup_paths",
+        "naming",
+        "project_revision",
+        "ignored_environment_keys"
+      ],
+      "params": [
+        {
+          "name": "payload",
+          "type": "LegacyNamingMigrationApplyRequest",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "_",
+          "type": "CsrfDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "service",
+          "type": "NamingServiceDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/naming/preview",
+      "full_path": "/api/v1/naming/preview",
+      "prefix": "/api/v1",
+      "method": "POST",
+      "module": "ktoolbox.webui.naming_routes",
+      "handler": "preview_naming",
+      "summary": null,
+      "status_code": null,
+      "response_model": "NamingPreviewResponse",
+      "response_fields": [
+        "id",
+        "revision",
+        "target_layout_revision",
+        "fingerprint",
+        "roots",
+        "creators",
+        "creator_count",
+        "work_count",
+        "file_count",
+        "total_bytes",
+        "skipped_count",
+        "conflict_count",
+        "created_at",
+        "source",
+        "resolves_pending_layout"
+      ],
+      "params": [
+        {
+          "name": "payload",
+          "type": "NamingPreviewRequest",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "_",
+          "type": "CsrfDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "service",
+          "type": "NamingServiceDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/naming/source/parse",
+      "full_path": "/api/v1/naming/source/parse",
+      "prefix": "/api/v1",
+      "method": "POST",
+      "module": "ktoolbox.webui.naming_routes",
+      "handler": "parse_naming_source",
+      "summary": null,
+      "status_code": null,
+      "response_model": "NamingSourceParseResponse",
+      "response_fields": [
+        "format",
+        "naming",
+        "digest",
+        "recognized_fields",
+        "defaulted_fields",
+        "warnings",
+        "differences",
+        "default_published_time_mode"
+      ],
+      "params": [
+        {
+          "name": "payload",
+          "type": "NamingSourceParseRequest",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "_",
+          "type": "CsrfDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "service",
+          "type": "NamingServiceDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/openapi.yaml",
+      "full_path": "/api/v1/openapi.yaml",
+      "prefix": "/api/v1",
+      "method": "GET",
+      "module": "ktoolbox.webui.mcp_routes",
+      "handler": "download_openapi",
+      "summary": null,
+      "status_code": null,
+      "response_model": null,
+      "response_fields": null,
+      "params": [
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/plans",
+      "full_path": "/api/v1/auto-sync/plans",
+      "prefix": "/api/v1/auto-sync",
+      "method": "GET",
+      "module": "ktoolbox.webui.auto_sync_routes",
+      "handler": "list_automatic_sync_plans",
+      "summary": null,
+      "status_code": null,
+      "response_model": "AutomaticSyncPlanListResponse",
+      "response_fields": [
+        "plans",
+        "revision",
+        "next_runs"
+      ],
+      "params": [
+        {
+          "name": "response_value",
+          "type": "Response",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/plans",
+      "full_path": "/api/v1/auto-sync/plans",
+      "prefix": "/api/v1/auto-sync",
+      "method": "POST",
+      "module": "ktoolbox.webui.auto_sync_routes",
+      "handler": "create_automatic_sync_plan",
+      "summary": null,
+      "status_code": "status.HTTP_201_CREATED",
+      "response_model": "AutomaticSyncPlanListResponse",
+      "response_fields": [
+        "plans",
+        "revision",
+        "next_runs"
+      ],
+      "params": [
+        {
+          "name": "plan",
+          "type": "AutomaticSyncPlan",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "response_value",
+          "type": "Response",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "_",
+          "type": "CsrfDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "if_match",
+          "type": "IfMatch",
+          "required": false,
+          "default": "None",
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/plans/{plan_id}",
+      "full_path": "/api/v1/auto-sync/plans/{plan_id}",
+      "prefix": "/api/v1/auto-sync",
+      "method": "DELETE",
+      "module": "ktoolbox.webui.auto_sync_routes",
+      "handler": "delete_automatic_sync_plan",
+      "summary": null,
+      "status_code": "status.HTTP_204_NO_CONTENT",
+      "response_model": null,
+      "response_fields": null,
+      "params": [
+        {
+          "name": "plan_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "_",
+          "type": "CsrfDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "if_match",
+          "type": "IfMatch",
+          "required": false,
+          "default": "None",
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/plans/{plan_id}",
+      "full_path": "/api/v1/auto-sync/plans/{plan_id}",
+      "prefix": "/api/v1/auto-sync",
+      "method": "GET",
+      "module": "ktoolbox.webui.auto_sync_routes",
+      "handler": "get_automatic_sync_plan",
+      "summary": null,
+      "status_code": null,
+      "response_model": "AutomaticSyncPlan",
+      "response_fields": null,
+      "params": [
+        {
+          "name": "plan_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/plans/{plan_id}",
+      "full_path": "/api/v1/auto-sync/plans/{plan_id}",
+      "prefix": "/api/v1/auto-sync",
+      "method": "PUT",
+      "module": "ktoolbox.webui.auto_sync_routes",
+      "handler": "update_automatic_sync_plan",
+      "summary": null,
+      "status_code": null,
+      "response_model": "AutomaticSyncPlanListResponse",
+      "response_fields": [
+        "plans",
+        "revision",
+        "next_runs"
+      ],
+      "params": [
+        {
+          "name": "plan_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "plan",
+          "type": "AutomaticSyncPlan",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "response_value",
+          "type": "Response",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "_",
+          "type": "CsrfDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "if_match",
+          "type": "IfMatch",
+          "required": false,
+          "default": "None",
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/plans/{plan_id}/pause",
+      "full_path": "/api/v1/auto-sync/plans/{plan_id}/pause",
+      "prefix": "/api/v1/auto-sync",
+      "method": "POST",
+      "module": "ktoolbox.webui.auto_sync_routes",
+      "handler": "pause_automatic_sync_plan",
+      "summary": null,
+      "status_code": null,
+      "response_model": "AutomaticSyncPlanListResponse",
+      "response_fields": [
+        "plans",
+        "revision",
+        "next_runs"
+      ],
+      "params": [
+        {
+          "name": "plan_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "response_value",
+          "type": "Response",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "_",
+          "type": "CsrfDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "if_match",
+          "type": "IfMatch",
+          "required": false,
+          "default": "None",
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/plans/{plan_id}/resume",
+      "full_path": "/api/v1/auto-sync/plans/{plan_id}/resume",
+      "prefix": "/api/v1/auto-sync",
+      "method": "POST",
+      "module": "ktoolbox.webui.auto_sync_routes",
+      "handler": "resume_automatic_sync_plan",
+      "summary": null,
+      "status_code": null,
+      "response_model": "AutomaticSyncPlanListResponse",
+      "response_fields": [
+        "plans",
+        "revision",
+        "next_runs"
+      ],
+      "params": [
+        {
+          "name": "plan_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "response_value",
+          "type": "Response",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "_",
+          "type": "CsrfDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "if_match",
+          "type": "IfMatch",
+          "required": false,
+          "default": "None",
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/plans/{plan_id}/run",
+      "full_path": "/api/v1/auto-sync/plans/{plan_id}/run",
+      "prefix": "/api/v1/auto-sync",
+      "method": "POST",
+      "module": "ktoolbox.webui.auto_sync_routes",
+      "handler": "run_automatic_sync_plan",
+      "summary": null,
+      "status_code": null,
+      "response_model": "AutomaticSyncRunNowResponse",
+      "response_fields": [
+        "task_id"
+      ],
+      "params": [
+        {
+          "name": "plan_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "_",
+          "type": "CsrfDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/posts",
+      "full_path": "/api/v1/pawchive/posts",
+      "prefix": "/api/v1/pawchive",
+      "method": "GET",
+      "module": "ktoolbox.webui.pawchive_routes",
+      "handler": "posts",
+      "summary": null,
+      "status_code": null,
+      "response_model": "list[PawchivePostSummaryResponse]",
+      "response_fields": [
+        "cover",
+        "effective_published",
+        "published_service_timezone",
+        "published_target_timezone"
+      ],
+      "params": [
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "creator_id",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "in": "query"
+        },
+        {
+          "name": "name",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "in": "query"
+        },
+        {
+          "name": "service",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "in": "query"
+        },
+        {
+          "name": "query",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "in": "query"
+        },
+        {
+          "name": "offset",
+          "type": "int | None",
+          "required": false,
+          "default": "None",
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/posts/{service}/{creator_id}/{post_id}",
+      "full_path": "/api/v1/pawchive/posts/{service}/{creator_id}/{post_id}",
+      "prefix": "/api/v1/pawchive",
+      "method": "GET",
+      "module": "ktoolbox.webui.pawchive_routes",
+      "handler": "post_details",
+      "summary": null,
+      "status_code": null,
+      "response_model": "PawchivePostDetailResponse | PawchiveRevisionDetailResponse",
+      "response_fields": null,
+      "params": [
+        {
+          "name": "service",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "creator_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "post_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "revision_id",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/posts/{service}/{creator_id}/{post_id}/revisions",
+      "full_path": "/api/v1/pawchive/posts/{service}/{creator_id}/{post_id}/revisions",
+      "prefix": "/api/v1/pawchive",
+      "method": "GET",
+      "module": "ktoolbox.webui.pawchive_routes",
+      "handler": "post_revisions",
+      "summary": null,
+      "status_code": null,
+      "response_model": "list[PawchiveRevisionSummaryResponse]",
+      "response_fields": [
+        "cover",
+        "effective_published",
+        "published_service_timezone",
+        "published_target_timezone"
+      ],
+      "params": [
+        {
+          "name": "service",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "creator_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "post_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/runs",
+      "full_path": "/api/v1/auto-sync/runs",
+      "prefix": "/api/v1/auto-sync",
+      "method": "GET",
+      "module": "ktoolbox.webui.auto_sync_routes",
+      "handler": "list_automatic_sync_runs",
+      "summary": null,
+      "status_code": null,
+      "response_model": "list[AutomaticSyncRunRecord]",
+      "response_fields": [
+        "id",
+        "plan_id",
+        "plan_name",
+        "trigger",
+        "status",
+        "task_id",
+        "scheduled_for",
+        "cutoff_at",
+        "created_at",
+        "started_at",
+        "finished_at",
+        "error"
+      ],
+      "params": [
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "limit",
+          "type": "Annotated[(int, Query(ge=1, le=200))]",
+          "required": false,
+          "default": "100",
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/site-version",
+      "full_path": "/api/v1/pawchive/site-version",
+      "prefix": "/api/v1/pawchive",
+      "method": "GET",
+      "module": "ktoolbox.webui.pawchive_routes",
+      "handler": "site_version",
+      "summary": null,
+      "status_code": null,
+      "response_model": "SiteVersionResponse",
+      "response_fields": [
+        "version"
+      ],
+      "params": [
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/startup-notices",
+      "full_path": "/api/v1/startup-notices",
+      "prefix": "/api/v1",
+      "method": "GET",
+      "module": "ktoolbox.webui.naming_routes",
+      "handler": "list_startup_notices",
+      "summary": null,
+      "status_code": null,
+      "response_model": "list[StartupNoticeResponse]",
+      "response_fields": [
+        "id",
+        "kind",
+        "payload",
+        "created_at",
+        "acknowledged_at",
+        "resolution",
+        "resolved_at"
+      ],
+      "params": [
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "service",
+          "type": "NamingServiceDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/startup-notices/{notice_id}/acknowledge",
+      "full_path": "/api/v1/startup-notices/{notice_id}/acknowledge",
+      "prefix": "/api/v1",
+      "method": "POST",
+      "module": "ktoolbox.webui.naming_routes",
+      "handler": "acknowledge_startup_notice",
+      "summary": null,
+      "status_code": null,
+      "response_model": "StartupNoticeResponse",
+      "response_fields": [
+        "id",
+        "kind",
+        "payload",
+        "created_at",
+        "acknowledged_at",
+        "resolution",
+        "resolved_at"
+      ],
+      "params": [
+        {
+          "name": "notice_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "_",
+          "type": "CsrfDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "service",
+          "type": "NamingServiceDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/startup-notices/{notice_id}/resolve",
+      "full_path": "/api/v1/startup-notices/{notice_id}/resolve",
+      "prefix": "/api/v1",
+      "method": "POST",
+      "module": "ktoolbox.webui.naming_routes",
+      "handler": "resolve_startup_notice",
+      "summary": null,
+      "status_code": null,
+      "response_model": "StartupNoticeResponse",
+      "response_fields": [
+        "id",
+        "kind",
+        "payload",
+        "created_at",
+        "acknowledged_at",
+        "resolution",
+        "resolved_at"
+      ],
+      "params": [
+        {
+          "name": "notice_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "payload",
+          "type": "StartupNoticeResolveRequest",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "_",
+          "type": "CsrfDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "service",
+          "type": "NamingServiceDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/tasks",
+      "full_path": "/api/v1/tasks",
+      "prefix": "/api/v1",
+      "method": "GET",
+      "module": "ktoolbox.webui.task_routes",
+      "handler": "list_tasks",
+      "summary": null,
+      "status_code": null,
+      "response_model": "list[TaskRecord]",
+      "response_fields": [
+        "id",
+        "kind",
+        "status",
+        "spec",
+        "presentation",
+        "automatic_origin",
+        "position",
+        "revision",
+        "progress",
+        "error",
+        "failure",
+        "blocked_by",
+        "created_at",
+        "updated_at"
+      ],
+      "params": [
+        {
+          "name": "_",
+          "type": "Annotated[(WebUISession, Depends(require_session))]",
+          "required": true,
+          "default": null,
+          "in": "depends"
+        },
+        {
+          "name": "store",
+          "type": "Annotated[(TaskStore, Depends(task_store))]",
+          "required": true,
+          "default": null,
+          "in": "depends"
+        }
+      ]
+    },
+    {
+      "path": "/tasks",
+      "full_path": "/api/v1/tasks",
+      "prefix": "/api/v1",
+      "method": "POST",
+      "module": "ktoolbox.webui.task_routes",
+      "handler": "create_task",
+      "summary": null,
+      "status_code": "status.HTTP_201_CREATED",
+      "response_model": "TaskRecord",
+      "response_fields": [
+        "id",
+        "kind",
+        "status",
+        "spec",
+        "presentation",
+        "automatic_origin",
+        "position",
+        "revision",
+        "progress",
+        "error",
+        "failure",
+        "blocked_by",
+        "created_at",
+        "updated_at"
+      ],
+      "params": [
+        {
+          "name": "payload",
+          "type": "TaskCreateRequest",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "_",
+          "type": "Annotated[(WebUISession, Depends(require_csrf))]",
+          "required": true,
+          "default": null,
+          "in": "depends"
+        },
+        {
+          "name": "scheduler",
+          "type": "Annotated[(TaskScheduler, Depends(task_scheduler))]",
+          "required": true,
+          "default": null,
+          "in": "depends"
+        }
+      ]
+    },
+    {
+      "path": "/tasks/{task_id}",
+      "full_path": "/api/v1/tasks/{task_id}",
+      "prefix": "/api/v1",
+      "method": "DELETE",
+      "module": "ktoolbox.webui.task_routes",
+      "handler": "delete_task",
+      "summary": null,
+      "status_code": null,
+      "response_model": "TaskCleanupPreview",
+      "response_fields": [
+        "task_id",
+        "artifacts",
+        "removable_files",
+        "removable_bytes"
+      ],
+      "params": [
+        {
+          "name": "task_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "_",
+          "type": "Annotated[(WebUISession, Depends(require_csrf))]",
+          "required": true,
+          "default": null,
+          "in": "depends"
+        },
+        {
+          "name": "store",
+          "type": "Annotated[(TaskStore, Depends(task_store))]",
+          "required": true,
+          "default": null,
+          "in": "depends"
+        },
+        {
+          "name": "delete_output",
+          "type": "bool",
+          "required": false,
+          "default": "False",
+          "in": "query"
+        },
+        {
+          "name": "confirmation",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/tasks/{task_id}",
+      "full_path": "/api/v1/tasks/{task_id}",
+      "prefix": "/api/v1",
+      "method": "GET",
+      "module": "ktoolbox.webui.task_routes",
+      "handler": "get_task",
+      "summary": null,
+      "status_code": null,
+      "response_model": "TaskRecord",
+      "response_fields": [
+        "id",
+        "kind",
+        "status",
+        "spec",
+        "presentation",
+        "automatic_origin",
+        "position",
+        "revision",
+        "progress",
+        "error",
+        "failure",
+        "blocked_by",
+        "created_at",
+        "updated_at"
+      ],
+      "params": [
+        {
+          "name": "task_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "_",
+          "type": "Annotated[(WebUISession, Depends(require_session))]",
+          "required": true,
+          "default": null,
+          "in": "depends"
+        },
+        {
+          "name": "store",
+          "type": "Annotated[(TaskStore, Depends(task_store))]",
+          "required": true,
+          "default": null,
+          "in": "depends"
+        }
+      ]
+    },
+    {
+      "path": "/tasks/{task_id}",
+      "full_path": "/api/v1/tasks/{task_id}",
+      "prefix": "/api/v1",
+      "method": "PATCH",
+      "module": "ktoolbox.webui.task_routes",
+      "handler": "update_task",
+      "summary": null,
+      "status_code": null,
+      "response_model": "TaskRecord",
+      "response_fields": [
+        "id",
+        "kind",
+        "status",
+        "spec",
+        "presentation",
+        "automatic_origin",
+        "position",
+        "revision",
+        "progress",
+        "error",
+        "failure",
+        "blocked_by",
+        "created_at",
+        "updated_at"
+      ],
+      "params": [
+        {
+          "name": "task_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "payload",
+          "type": "TaskUpdateRequest",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "_",
+          "type": "Annotated[(WebUISession, Depends(require_csrf))]",
+          "required": true,
+          "default": null,
+          "in": "depends"
+        },
+        {
+          "name": "scheduler",
+          "type": "Annotated[(TaskScheduler, Depends(task_scheduler))]",
+          "required": true,
+          "default": null,
+          "in": "depends"
+        },
+        {
+          "name": "store",
+          "type": "Annotated[(TaskStore, Depends(task_store))]",
+          "required": true,
+          "default": null,
+          "in": "depends"
+        }
+      ]
+    },
+    {
+      "path": "/tasks/{task_id}/attempts",
+      "full_path": "/api/v1/tasks/{task_id}/attempts",
+      "prefix": "/api/v1",
+      "method": "GET",
+      "module": "ktoolbox.webui.task_routes",
+      "handler": "task_attempts",
+      "summary": null,
+      "status_code": null,
+      "response_model": "list[TaskAttempt]",
+      "response_fields": [
+        "id",
+        "task_id",
+        "sequence",
+        "status",
+        "spec",
+        "configuration",
+        "started_at",
+        "finished_at",
+        "error",
+        "failure",
+        "result"
+      ],
+      "params": [
+        {
+          "name": "task_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "_",
+          "type": "Annotated[(WebUISession, Depends(require_session))]",
+          "required": true,
+          "default": null,
+          "in": "depends"
+        },
+        {
+          "name": "store",
+          "type": "Annotated[(TaskStore, Depends(task_store))]",
+          "required": true,
+          "default": null,
+          "in": "depends"
+        }
+      ]
+    },
+    {
+      "path": "/tasks/{task_id}/cleanup-preview",
+      "full_path": "/api/v1/tasks/{task_id}/cleanup-preview",
+      "prefix": "/api/v1",
+      "method": "GET",
+      "module": "ktoolbox.webui.task_routes",
+      "handler": "cleanup_preview",
+      "summary": null,
+      "status_code": null,
+      "response_model": "TaskCleanupPreview",
+      "response_fields": [
+        "task_id",
+        "artifacts",
+        "removable_files",
+        "removable_bytes"
+      ],
+      "params": [
+        {
+          "name": "task_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "_",
+          "type": "Annotated[(WebUISession, Depends(require_session))]",
+          "required": true,
+          "default": null,
+          "in": "depends"
+        },
+        {
+          "name": "store",
+          "type": "Annotated[(TaskStore, Depends(task_store))]",
+          "required": true,
+          "default": null,
+          "in": "depends"
+        }
+      ]
+    },
+    {
+      "path": "/tasks/{task_id}/events",
+      "full_path": "/api/v1/tasks/{task_id}/events",
+      "prefix": "/api/v1",
+      "method": "GET",
+      "module": "ktoolbox.webui.task_routes",
+      "handler": "task_events",
+      "summary": null,
+      "status_code": null,
+      "response_model": "list[TaskEvent]",
+      "response_fields": [
+        "id",
+        "task_id",
+        "event_type",
+        "resource",
+        "resource_id",
+        "data",
+        "created_at"
+      ],
+      "params": [
+        {
+          "name": "task_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "_",
+          "type": "Annotated[(WebUISession, Depends(require_session))]",
+          "required": true,
+          "default": null,
+          "in": "depends"
+        },
+        {
+          "name": "store",
+          "type": "Annotated[(TaskStore, Depends(task_store))]",
+          "required": true,
+          "default": null,
+          "in": "depends"
+        },
+        {
+          "name": "after",
+          "type": "Annotated[(int, Query(ge=0))]",
+          "required": false,
+          "default": "0",
+          "in": "query"
+        },
+        {
+          "name": "view",
+          "type": "Annotated[(Literal[('activity', 'transfers', 'all')], Query())]",
+          "required": false,
+          "default": "'all'",
+          "in": "query"
+        },
+        {
+          "name": "limit",
+          "type": "Annotated[(int, Query(ge=1, le=200))]",
+          "required": false,
+          "default": "200",
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/tasks/{task_id}/pause",
+      "full_path": "/api/v1/tasks/{task_id}/pause",
+      "prefix": "/api/v1",
+      "method": "POST",
+      "module": "ktoolbox.webui.task_routes",
+      "handler": "pause_task",
+      "summary": null,
+      "status_code": null,
+      "response_model": "TaskRecord",
+      "response_fields": [
+        "id",
+        "kind",
+        "status",
+        "spec",
+        "presentation",
+        "automatic_origin",
+        "position",
+        "revision",
+        "progress",
+        "error",
+        "failure",
+        "blocked_by",
+        "created_at",
+        "updated_at"
+      ],
+      "params": [
+        {
+          "name": "task_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "_",
+          "type": "Annotated[(WebUISession, Depends(require_csrf))]",
+          "required": true,
+          "default": null,
+          "in": "depends"
+        },
+        {
+          "name": "scheduler",
+          "type": "Annotated[(TaskScheduler, Depends(task_scheduler))]",
+          "required": true,
+          "default": null,
+          "in": "depends"
+        }
+      ]
+    },
+    {
+      "path": "/tasks/{task_id}/rerun",
+      "full_path": "/api/v1/tasks/{task_id}/rerun",
+      "prefix": "/api/v1",
+      "method": "POST",
+      "module": "ktoolbox.webui.task_routes",
+      "handler": "rerun_task",
+      "summary": null,
+      "status_code": null,
+      "response_model": "TaskRecord",
+      "response_fields": [
+        "id",
+        "kind",
+        "status",
+        "spec",
+        "presentation",
+        "automatic_origin",
+        "position",
+        "revision",
+        "progress",
+        "error",
+        "failure",
+        "blocked_by",
+        "created_at",
+        "updated_at"
+      ],
+      "params": [
+        {
+          "name": "task_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "_",
+          "type": "Annotated[(WebUISession, Depends(require_csrf))]",
+          "required": true,
+          "default": null,
+          "in": "depends"
+        },
+        {
+          "name": "scheduler",
+          "type": "Annotated[(TaskScheduler, Depends(task_scheduler))]",
+          "required": true,
+          "default": null,
+          "in": "depends"
+        }
+      ]
+    },
+    {
+      "path": "/tasks/{task_id}/resume",
+      "full_path": "/api/v1/tasks/{task_id}/resume",
+      "prefix": "/api/v1",
+      "method": "POST",
+      "module": "ktoolbox.webui.task_routes",
+      "handler": "resume_task",
+      "summary": null,
+      "status_code": null,
+      "response_model": "TaskRecord",
+      "response_fields": [
+        "id",
+        "kind",
+        "status",
+        "spec",
+        "presentation",
+        "automatic_origin",
+        "position",
+        "revision",
+        "progress",
+        "error",
+        "failure",
+        "blocked_by",
+        "created_at",
+        "updated_at"
+      ],
+      "params": [
+        {
+          "name": "task_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "_",
+          "type": "Annotated[(WebUISession, Depends(require_csrf))]",
+          "required": true,
+          "default": null,
+          "in": "depends"
+        },
+        {
+          "name": "scheduler",
+          "type": "Annotated[(TaskScheduler, Depends(task_scheduler))]",
+          "required": true,
+          "default": null,
+          "in": "depends"
+        }
+      ]
+    },
+    {
+      "path": "/tasks/{task_id}/stop",
+      "full_path": "/api/v1/tasks/{task_id}/stop",
+      "prefix": "/api/v1",
+      "method": "POST",
+      "module": "ktoolbox.webui.task_routes",
+      "handler": "stop_task",
+      "summary": null,
+      "status_code": null,
+      "response_model": "TaskRecord",
+      "response_fields": [
+        "id",
+        "kind",
+        "status",
+        "spec",
+        "presentation",
+        "automatic_origin",
+        "position",
+        "revision",
+        "progress",
+        "error",
+        "failure",
+        "blocked_by",
+        "created_at",
+        "updated_at"
+      ],
+      "params": [
+        {
+          "name": "task_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "_",
+          "type": "Annotated[(WebUISession, Depends(require_csrf))]",
+          "required": true,
+          "default": null,
+          "in": "depends"
+        },
+        {
+          "name": "scheduler",
+          "type": "Annotated[(TaskScheduler, Depends(task_scheduler))]",
+          "required": true,
+          "default": null,
+          "in": "depends"
+        }
+      ]
+    },
+    {
+      "path": "/updates",
+      "full_path": "/api/v1/auto-sync/updates",
+      "prefix": "/api/v1/auto-sync",
+      "method": "GET",
+      "module": "ktoolbox.webui.auto_sync_routes",
+      "handler": "list_automatic_sync_updates",
+      "summary": null,
+      "status_code": null,
+      "response_model": "list[AutomaticSyncUpdateSummary]",
+      "response_fields": [
+        "service",
+        "creator_id",
+        "creator_name",
+        "new_posts",
+        "last_discovered_at"
+      ],
+      "params": [
+        {
+          "name": "_",
+          "type": "SessionDependency",
+          "required": true,
+          "default": null,
+          "in": "query"
+        },
+        {
+          "name": "period",
+          "type": "AutomaticSyncUpdateRange",
+          "required": false,
+          "default": "'30d'",
+          "in": "query"
+        },
+        {
+          "name": "timezone",
+          "type": "Annotated[(str, Query(min_length=1, max_length=128))]",
+          "required": false,
+          "default": "'UTC'",
+          "in": "query"
+        }
+      ]
+    },
+    {
+      "path": "/{path:path}",
+      "full_path": "/{path:path}",
+      "prefix": "",
+      "method": "GET",
+      "module": "ktoolbox.webui.app",
+      "handler": "frontend",
+      "summary": null,
+      "status_code": null,
+      "response_model": null,
+      "response_fields": null,
+      "params": [
+        {
+          "name": "path",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "query"
+        }
+      ]
+    }
+  ]
+}

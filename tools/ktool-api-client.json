@@ -1,0 +1,559 @@
+{
+  "meta": {
+    "generator": "tools/extract-ktool-apis.py",
+    "source_repo": "/volume1/@appdata/DeepSeekHarness-NAS/0.1.6-alpha.1/工作区/Pawchive-downloader/.probe-ktoolbox",
+    "extracted_at": "2026-09-28T01:38:21Z",
+    "python_version": "3.8.15"
+  },
+  "client_class": "PawchiveClient",
+  "module": "ktoolbox.api.client",
+  "base_url": "https://pawchive.pw/api/v1",
+  "methods": [
+    {
+      "name": "list_creators",
+      "http_method": "GET",
+      "url_template": "/creators",
+      "params": [],
+      "returns": {
+        "type": "list[CreatorSummary]",
+        "model": "CreatorSummary",
+        "fields": [
+          "favorited",
+          "id",
+          "indexed",
+          "name",
+          "service",
+          "updated"
+        ]
+      }
+    },
+    {
+      "name": "list_recent_posts",
+      "http_method": "GET",
+      "url_template": "/posts",
+      "params": [
+        {
+          "name": "query",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "in": "query"
+        },
+        {
+          "name": "offset",
+          "type": "int | None",
+          "required": false,
+          "default": "None",
+          "in": "query"
+        }
+      ],
+      "returns": {
+        "type": "list[Post]",
+        "model": "Post",
+        "fields": [
+          "id",
+          "user",
+          "service",
+          "title",
+          "content",
+          "substring",
+          "embed",
+          "shared_file",
+          "added",
+          "published",
+          "edited",
+          "file",
+          "attachments",
+          "poll",
+          "captions",
+          "tags",
+          "origin",
+          "preview_state",
+          "has_full",
+          "preview_attempts",
+          "detail_fetched",
+          "import_size_cap_gb",
+          "next",
+          "prev"
+        ]
+      }
+    },
+    {
+      "name": "get_creator_profile",
+      "http_method": "GET",
+      "url_template": "/{service}/user/{creator_id}/profile",
+      "params": [
+        {
+          "name": "service",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "creator_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        }
+      ],
+      "returns": {
+        "type": "CreatorProfile",
+        "model": "CreatorProfile",
+        "fields": [
+          "id",
+          "public_id",
+          "service",
+          "name",
+          "indexed",
+          "updated",
+          "relation_id",
+          "ever_imported",
+          "kemono_favorited",
+          "last_import_favs",
+          "import_size_cap_gb"
+        ]
+      }
+    },
+    {
+      "name": "list_creator_posts",
+      "http_method": "GET",
+      "url_template": "/{service}/user/{creator_id}",
+      "params": [
+        {
+          "name": "service",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "creator_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "query",
+          "type": "str | None",
+          "required": false,
+          "default": "None",
+          "in": "query"
+        },
+        {
+          "name": "offset",
+          "type": "int | None",
+          "required": false,
+          "default": "None",
+          "in": "query"
+        }
+      ],
+      "returns": {
+        "type": "list[Post]",
+        "model": "Post",
+        "fields": [
+          "id",
+          "user",
+          "service",
+          "title",
+          "content",
+          "substring",
+          "embed",
+          "shared_file",
+          "added",
+          "published",
+          "edited",
+          "file",
+          "attachments",
+          "poll",
+          "captions",
+          "tags",
+          "origin",
+          "preview_state",
+          "has_full",
+          "preview_attempts",
+          "detail_fetched",
+          "import_size_cap_gb",
+          "next",
+          "prev"
+        ]
+      }
+    },
+    {
+      "name": "list_announcements",
+      "http_method": "GET",
+      "url_template": "/{service}/user/{creator_id}/announcements",
+      "params": [
+        {
+          "name": "service",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "creator_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        }
+      ],
+      "returns": {
+        "type": "list[Announcement]",
+        "model": "Announcement",
+        "fields": [
+          "service",
+          "user_id",
+          "hash",
+          "content",
+          "added"
+        ]
+      }
+    },
+    {
+      "name": "list_fancards",
+      "http_method": "GET",
+      "url_template": "/{service}/user/{creator_id}/fancards",
+      "params": [
+        {
+          "name": "service",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "creator_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        }
+      ],
+      "returns": {
+        "type": "list[Fancard]",
+        "model": "Fancard",
+        "fields": [
+          "id",
+          "user_id",
+          "file_id",
+          "hash",
+          "mtime",
+          "ctime",
+          "mime",
+          "ext",
+          "added",
+          "size",
+          "ihash"
+        ]
+      }
+    },
+    {
+      "name": "list_creator_links",
+      "http_method": "GET",
+      "url_template": "/{service}/user/{creator_id}/links",
+      "params": [
+        {
+          "name": "service",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "creator_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        }
+      ],
+      "returns": {
+        "type": "list[CreatorProfile]",
+        "model": "CreatorProfile",
+        "fields": [
+          "id",
+          "public_id",
+          "service",
+          "name",
+          "indexed",
+          "updated",
+          "relation_id",
+          "ever_imported",
+          "kemono_favorited",
+          "last_import_favs",
+          "import_size_cap_gb"
+        ]
+      }
+    },
+    {
+      "name": "get_post",
+      "http_method": "GET",
+      "url_template": "/{service}/user/{creator_id}/post/{post_id}",
+      "params": [
+        {
+          "name": "service",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "creator_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "post_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        }
+      ],
+      "returns": {
+        "type": "Post",
+        "model": "Post",
+        "fields": [
+          "id",
+          "user",
+          "service",
+          "title",
+          "content",
+          "substring",
+          "embed",
+          "shared_file",
+          "added",
+          "published",
+          "edited",
+          "file",
+          "attachments",
+          "poll",
+          "captions",
+          "tags",
+          "origin",
+          "preview_state",
+          "has_full",
+          "preview_attempts",
+          "detail_fetched",
+          "import_size_cap_gb",
+          "next",
+          "prev"
+        ]
+      }
+    },
+    {
+      "name": "search_file_by_hash",
+      "http_method": "GET",
+      "url_template": "/search_hash/{file_hash}",
+      "params": [
+        {
+          "name": "file_hash",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        }
+      ],
+      "returns": {
+        "type": "FileSearchResult",
+        "model": "FileSearchResult",
+        "fields": [
+          "id",
+          "hash",
+          "mtime",
+          "ctime",
+          "mime",
+          "ext",
+          "added",
+          "size",
+          "ihash",
+          "posts",
+          "discord_posts"
+        ]
+      }
+    },
+    {
+      "name": "flag_post",
+      "http_method": "POST",
+      "url_template": "/{service}/user/{creator_id}/post/{post_id}/flag",
+      "params": [
+        {
+          "name": "service",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "creator_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "post_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        }
+      ],
+      "returns": {
+        "type": "None",
+        "model": null,
+        "fields": null
+      }
+    },
+    {
+      "name": "is_post_flagged",
+      "http_method": "GET",
+      "url_template": "/{service}/user/{creator_id}/post/{post_id}/flag",
+      "params": [
+        {
+          "name": "service",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "creator_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "post_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        }
+      ],
+      "returns": {
+        "type": "bool",
+        "model": null,
+        "fields": null
+      }
+    },
+    {
+      "name": "list_post_revisions",
+      "http_method": "GET",
+      "url_template": "/{service}/user/{creator_id}/post/{post_id}/revisions",
+      "params": [
+        {
+          "name": "service",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "creator_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "post_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        }
+      ],
+      "returns": {
+        "type": "list[Revision]",
+        "model": "Revision",
+        "fields": [
+          "id",
+          "user",
+          "service",
+          "title",
+          "content",
+          "substring",
+          "embed",
+          "shared_file",
+          "added",
+          "published",
+          "edited",
+          "file",
+          "attachments",
+          "poll",
+          "captions",
+          "tags",
+          "origin",
+          "preview_state",
+          "has_full",
+          "preview_attempts",
+          "detail_fetched",
+          "import_size_cap_gb",
+          "next",
+          "prev",
+          "revision_id"
+        ]
+      }
+    },
+    {
+      "name": "list_post_comments",
+      "http_method": "GET",
+      "url_template": "/{service}/user/{creator_id}/post/{post_id}/comments",
+      "params": [
+        {
+          "name": "service",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "creator_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        },
+        {
+          "name": "post_id",
+          "type": "str",
+          "required": true,
+          "default": null,
+          "in": "path"
+        }
+      ],
+      "returns": {
+        "type": "list[Comment]",
+        "model": "Comment",
+        "fields": [
+          "id",
+          "parent_id",
+          "commenter",
+          "commenter_name",
+          "content",
+          "published",
+          "revisions"
+        ]
+      }
+    },
+    {
+      "name": "get_app_version",
+      "http_method": "GET",
+      "url_template": "/app_version",
+      "params": [],
+      "returns": {
+        "type": "str",
+        "model": null,
+        "fields": null
+      }
+    }
+  ]
+}
