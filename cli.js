@@ -638,6 +638,30 @@ const NETDISK_PROVIDERS = {
   // baidu: { match: /pan\.baidu\.com\/s\/[A-Za-z0-9_-]+/, extract: ..., downloadUrl: ..., key: id => `baidu:${id}` },
 };
 
+/** 提取正文所有外部链接（URL 正则去重——外链表格/正文本地化共用） */
+function extractContentLinks(content) {
+  return [...new Set((content || '').match(/https?:\/\/[^\s"'<>（）()，。、；；]+/g) || [])];
+}
+
+/** 匹配正文第一个网盘链接 → {type, id(extract 结果), key(去重/复用键=完整 URL：drive 构造 share URL、dropbox 即规范 URL)}；无 → null（遍历 provider——新增网盘自动识别） */
+function matchNetdiskLink(content) {
+  for (const [type, p] of Object.entries(NETDISK_PROVIDERS)) {
+    const m = (content || '').match(p.match);
+    if (m) { const id = p.extract(m[0]); return { type, id, key: p.share ? p.share(id) : id }; }
+  }
+  return null;
+}
+
+/** 构建 网盘URL→本地文件 映射（新格式 serverPath=完整网址作键；旧格式 netdiskId 兼容） */
+function buildNetdiskFileMap(files) {
+  const map = new Map();
+  for (const f of (files || [])) {
+    if (f.serverPath && /^https?:/i.test(f.serverPath)) map.set(f.serverPath, f);
+    else if (f.netdiskId) map.set(f.netdiskId, f);
+  }
+  return map;
+}
+
 /** 下载正文里的网盘链接（遍历已注册 provider）到帖子目录；文件名取响应头原始名。
  * 返回记录项 [{filename, size, exists, serverPath(网盘=完整网址), rel, savePath}]——并入帖 html files[] 展示。 */
 async function downloadNetdiskFiles(detail, postDir, hashIndex) {
@@ -1108,13 +1132,9 @@ function buildPostIndexHtml(post, creatorName, postDirDisplay, files) {
   // 标注类型，并按「真实显示」分区：图片墙 / 视频播放器 / 压缩包下载卡片
   const typed = (files || []).map(f => ({ ...f, kind: fileKind(f.filename) }));
   // 正文外部链接统计（一般是网盘下载地址等）：提取 http(s) 链接去重成表
-  const extLinks = [...new Set((post.content || '').match(/https?:\/\/[^\s"'<>（）()，。、；；]+/g) || [])];
+  const extLinks = extractContentLinks(post.content);
   // 外链表格保持原样（原始 URL 链接，展示来源；正文里的网盘链接才本地化）
-  const netdiskFileByUrl = new Map();
-  for (const f of (files || [])) {
-    if (f.serverPath && /^https?:/i.test(f.serverPath)) netdiskFileByUrl.set(f.serverPath, f); // 新格式：serverPath=完整网址即本地化匹配键
-    else if (f.netdiskId) netdiskFileByUrl.set(f.netdiskId, f); // 旧格式（netdiskId）兼容
-  }
+  const netdiskFileByUrl = buildNetdiskFileMap(files);
   const extRows = extLinks
     .map((u, i) => {
       let host = '';
@@ -1142,7 +1162,7 @@ function buildPostIndexHtml(post, creatorName, postDirDisplay, files) {
     schema: 1, type: 'post', service: post.service || '', userId: post.user || '', postId: post.id,
     title: post.title || '', creatorName, url: postUrlOf(post),
     published: post.published || null, postDir: postDirDisplay || null,
-    driveLinks: Object.values(NETDISK_PROVIDERS).some(p => p.match.test(post.content || '')), // 正文是否有网盘链接（遍历 provider 判断，新增网盘自动识别；快速跳过有网盘不跳，防历史帖漏下网盘）
+    driveLinks: !!matchNetdiskLink(post.content), // 正文是否有网盘链接（遍历 provider 判断，新增网盘自动识别；快速跳过有网盘不跳，防历史帖漏下网盘）
     files: typed.map(f => ({ filename: f.filename, size: f.size || null, exists: !!f.exists, serverPath: f.serverPath, rel: f.rel, kind: f.kind })),
   };
   return `<!DOCTYPE html>
@@ -1854,6 +1874,60 @@ async function downloadOnePost(listPost, meta, targetPath, opts = {}, shared = n
  * 并帖间等待后才解析/下载下一帖；绝不在下载前批量解析帖子内容（防反爬）。
  * 最后写创作者级总览索引并汇总。
  */
+/** 从旧帖 html 提取人读正文区（<div class="desc">…</div>，平衡 div 深度防嵌套截断） */
+function extractDescHtml(html) {
+  const open = '<div class="desc">';
+  const s = String(html || '').indexOf(open);
+  if (s < 0) return null;
+  let i = s + open.length;
+  let depth = 1;
+  const h = String(html);
+  while (i < h.length) {
+    const ni = h.indexOf('<div', i);
+    const nc = h.indexOf('</div>', i);
+    if (nc < 0) return null;
+    if (ni >= 0 && ni < nc) { depth++; i = ni + 5; }
+    else { depth--; if (depth === 0) return h.slice(s + open.length, nc); i = nc + 6; }
+  }
+  return null;
+}
+
+/** 快速跳过：纯本地 html 刷新（零网络/零下载配额）——旧 html 记录 + 磁盘 stat 校验 + 正文网盘项重建 → 重写帖 html。
+ * 返回 true=下载完成（已刷新 html）；false=未完成（文件缺失/大小不符/正文网盘本地无对应文件/无旧 html）→ 调用方回退正常下载。 */
+async function refreshPostIndexLocal(listPost, plan, targetPath, hashIndex) {
+  const postDir = path.join(targetPath, listPost.relDir);
+  const htmlPath = path.join(postDir, CONFIG.indexFilename);
+  let oldHtml = '';
+  let old;
+  try { oldHtml = await fs.promises.readFile(htmlPath, 'utf8'); old = parseIndexObj(oldHtml); } catch { return false; }
+  if (!old || !Array.isArray(old.files)) return false; // 无旧 html（人为删除）→ 未完成走下载
+  const files = [];
+  for (const f of old.files) {
+    const full = path.join(postDir, f.rel);
+    let size = 0;
+    try { size = (await fs.promises.stat(full)).size; } catch { return false; } // 缺文件 → 未完成
+    if (f.size != null && size !== Number(f.size)) return false; // 大小不符 → 未完成
+    files.push({ filename: f.filename, size, exists: true, serverPath: f.serverPath, rel: f.rel, kind: f.kind });
+  }
+  // 正文网盘项重建（旧 html 未记录网盘也能发现）：复用 cli 公共逻辑——matchNetdiskLink 解析正文网盘链接 + hashIndex URL 键查本地文件（不手写文件名查找）
+  const content = extractDescHtml(oldHtml);
+  if (content) {
+    const hit = matchNetdiskLink(content);
+    if (hit) {
+      const rec = hashIndex && hashIndex.get(hit.key); // key=完整 URL（drive 构造 share URL、dropbox 规范 URL）——与 buildHashIndex 登记键一致
+      if (!rec || !rec.rel) return false; // 正文有网盘链接但本地无对应文件（未下载/未记录）→ 未完成（走正常下载补网盘）
+      let size = 0;
+      try { size = (await fs.promises.stat(rec.rel)).size; } catch { return false; }
+      files.push({ filename: path.basename(rec.rel), size, exists: true, serverPath: hit.key, rel: path.relative(postDir, rec.rel), kind: 'archive' });
+    }
+  }
+  // 重写 html：直接 buildPostIndexHtml + 写已知 postDir（不调 writeOnePostIndex——它按 post.id 派生目录，与创作者总览 relDir 实际目录可能不一致）
+  const post = { id: old.postId, service: old.service, user: old.userId, title: old.title, published: old.published, content: content || '' };
+  const html = buildPostIndexHtml(post, plan.creatorName, path.relative(targetPath, postDir), files);
+  await fs.promises.writeFile(htmlPath, html);
+  return true;
+}
+
 async function downloadAuthor(posts, meta, targetPath, opts = {}) {
   const { dryrun, probe, concurrency } = opts;
   const emit = opts.onEvent || (() => {}); // 可选事件回调（core 事件化；纯附加）
@@ -1874,11 +1948,13 @@ async function downloadAuthor(posts, meta, targetPath, opts = {}) {
 
   // 根据创作者级 html 快速跳过已完整下载的帖（downloaded==fileCount 且 fileCount>0、帖目录存在）：
   // 不再 getPost 解析详情与重复检查（0 文件帖/未生成帖 html 的不跳，照常处理）
+  // 【设计】单帖模式（用户显式指定单帖 URL）不做快速跳过——单帖=明确要处理该帖（可能修复/重下/检查），
+  // 快速跳过仅面向创作者批量模式：全量补漏时对已完整且无网盘链接的帖零网络本地刷新，省下载配额。
   const completedPosts = new Set();
   try {
     const creatorIndex = parseIndexObj(await fs.promises.readFile(path.join(plan.creatorDir, CONFIG.indexFilename), 'utf8'));
     for (const p of (creatorIndex && creatorIndex.posts) || []) {
-      if (CONFIG.fastSkip && p.relDir && p.fileCount > 0 && p.downloaded === p.fileCount && p.driveLinks === false) completedPosts.add(String(p.postId)); // 快速跳过受 PAWCHIVE_FAST_SKIP 控制（默认关→全量检查补外链/网盘；开→仅明确无网盘链接的完整帖跳过）
+      if (meta.mode !== 'post' && CONFIG.fastSkip && p.relDir && p.fileCount > 0 && p.downloaded === p.fileCount && p.driveLinks === false) completedPosts.add(String(p.postId)); // 快速跳过受 PAWCHIVE_FAST_SKIP 控制（默认关→全量检查补外链/网盘；开→仅明确无网盘链接的完整帖跳过）
     }
     if (completedPosts.size) log(`[索引] 创作者总览检测到 ${completedPosts.size} 帖已完整，直接跳过（不解析详情）`);
   } catch { /* 无创作者级 html（首次）→ 全量处理 */ }
@@ -1888,11 +1964,19 @@ async function downloadAuthor(posts, meta, targetPath, opts = {}) {
   const slotCount = Math.max(1, Math.min(Number(concurrency) || 1, posts.length));
   const active = new Set(); // 处理中的帖子 promise（槽位）
   for (let i = 0; i < posts.length; i++) {
-    if (completedPosts.has(String(posts[i].id))) {
-      if (!tty) console.log(`  [已下载跳过] ${posts[i].title || posts[i].id}（创作者索引显示完整）`);
-      ctx.sw.skipPosts++; // 快速跳过帖计入统计（finishDownload 汇总显示）
-      emit({ type: 'post.skipped', data: { postId: posts[i].id, title: posts[i].title || '' } });
-      continue; // 快速跳过：不占槽位、不等待
+    if (meta.mode !== 'post' && completedPosts.has(String(posts[i].id))) {
+      // 快速跳过：纯本地 html 刷新（零网络/零下载配额——不拉详情不下载）；磁盘校验不符 → 回退正常下载
+      // （单帖模式不跳过——见上方 completedPosts 构建注释：单帖=明确处理该帖）
+      const refreshed = await refreshPostIndexLocal(posts[i], plan, targetPath, ctx.hashIndex);
+      if (!refreshed) {
+        completedPosts.delete(String(posts[i].id));
+        log(`[索引] ${posts[i].title || posts[i].id} 本地校验未完成（缺文件/大小不符/网盘未下），回退正常下载`);
+      } else {
+        if (!tty) console.log(`  [已下载跳过] ${posts[i].title || posts[i].id}（本地刷新 html，零网络）`);
+        ctx.sw.skipPosts++; // 快速跳过帖计入统计（finishDownload 汇总显示）
+        emit({ type: 'post.skipped', data: { postId: posts[i].id, title: posts[i].title || '' } });
+        continue; // 快速跳过：不占槽位、不等待
+      }
     }
     // 并发维持：槽位满 → 等任一完成【立即补位】（不额外 sleep，保持并发数恒满）
     if (active.size >= slotCount) {
@@ -2028,5 +2112,6 @@ module.exports = {
   fetchPostsByUrl, downloadOnePost, downloadAuthor,
   getPost, fetchPostRevisions, fetchAllCreators, // Pawchive 单帖详情 + 修订版本列表 + 创作者全量（引擎 API——供上层调用）
   NETDISK_PROVIDERS, downloadNetdiskFiles, // 网盘 provider 注册表 + 下载（引擎 API——供上层复用）
+  extractContentLinks, matchNetdiskLink, buildNetdiskFileMap, extractDescHtml, refreshPostIndexLocal, // 公共函数（外链提取/网盘匹配/URL映射/正文提取/快速跳过本地刷新）
   indexFileFor, loadIndex, saveIndex, fetchPostsWithResume,
 };
