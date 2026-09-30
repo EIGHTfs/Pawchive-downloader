@@ -114,6 +114,12 @@ Pawchive 文件路径是 SHA-256 内容寻址（`/<2位>/<3位>/<64位hash>.<ext
   - 映射项：并发 `KTOOLBOX_JOB__COUNT`→`PAWCHIVE_CONCURRENCY`、文件 host `KTOOLBOX_DOWNLOADER__FILES_NETLOC`→`PAWCHIVE_FILES_BASE`（自动补 https://）、前缀 `KTOOLBOX_DOWNLOADER__FILE_PATH_PREFIX`→`PAWCHIVE_FILES_PREFIX`、API `KTOOLBOX_API__SCHEME/NETLOC/PATH`→`PAWCHIVE_API_BASE`、命名模板 `creator_dirname_format`→`PAWCHIVE_CREATOR_DIR_FORMAT`、`post_dirname_format`→`PAWCHIVE_POST_DIR_FORMAT`、`filename_format`→`PAWCHIVE_FILENAME_FORMAT`（变量 `{creator_name}/{creator_id}/{service}/{title}/{post_id}` 双向兼容）
   - 优先级：已有 `PAWCHIVE_*` > KToolBox 映射 > 本项目 `.env` > 默认值
 
+- **WebUI 协议切换兼容层**（`server.js`，零依赖）：KToolBox 前端（`webui-static` bundle）直接接我们 Node 后端——协议注册表（`PAWCHIVE_WEB_PROTOCOL` 默认 `KToolBox-webui`；`native` 预留）+ 适配器（`adapters/`，翻译层）→ `core.js` 业务内核（复用 cli 下载引擎）→ SQLite（`webui.db`：任务/事件/创作者 enabled 等持久化，**固定库重启状态保持**）
+  - 启动：`node server.js`（端口 `PAWCHIVE_WEB_HOST/PORT` 默认 `0.0.0.0:8789`；DB `PAWCHIVE_WEB_DB` 默认项目根 `webui.db`——**保持固定库，重启不丢创作者开关/任务/事件状态**）
+  - 端点覆盖：session 放行（无登录）/ creators（列表+头像+编辑 `enabled`「纳入全量同步」持久化 + **DELETE 软删**（removed 标记——列表排除——目录保留可恢复）+ **创作者搜索**：Pawchive `/creators` 全量缓存 `.pawchive/creators-cache.json` + 过滤）/ tasks（创建 URL+fields+sync creators 双格式、下载执行、进度、事件 SSE）/ filesystem 选路径（project scope 防路径穿越）/ naming 模板映射（**env 中枢读取**——`PAWCHIVE_*_FORMAT`/INDEX_FILENAME/REVISIONS_SUBDIR）+ 保存写配置 / config schema 26 字段+dotenv / posts 详情代理 / **修订版本下载**（默认开——`PAWCHIVE_INCLUDE_REVISIONS`——每修订版存 `帖目录/revisions/<revision_id>/`——dryrun 支持）/ **legacy-migration 真实迁移**（migrate.js 双向 + `--to-ktool` 反向）/ blockers 空对齐（无对应业务）/ **auto-sync 真实实现**（自动按作者下载：计划 CRUD + 定时器每分钟扫描到期触发 sync 任务 + run/pause/resume——schedule 简化为 interval{every,unit}——queued_files 对齐原版 job.queued 累计）/ client-error 错误上报（**①层注入已生效**：server 静态注入 window.onerror/unhandledrejection/资源 error 三件套 → `/api/v1/client-error` → `.client-errors.jsonl` → AI tail 定位——null.values 类前端崩即时落盘——过滤浏览器扩展源）/ **DEBUG 启动自检**（`PAWCHIVE_WEB_DEBUG=1`——启动自动测 11 核心端点写日志）
+  - **env 翻译中枢**（`scripts/KToolBox-env-compat.js`——双向映射库）：`readPawchiveEnv()`（PAWCHIVE_* → 配置对象）/ `toKToolBox()`（反向——KToolBox 兼容我们，写真实值）/ `writeEnv()`（.env 写）——兼容层 env 相关全走它；探测 KToolBox 配置按原版同款（`KTOOLBOX_PROJECT_CONFIG` → toml 目录，`.env`/`prod.env`/`ktoolbox.toml` 同目录）；cli 不动（自读 env）
+  - 测试：`node test/webapi.test.js`（约 26 项断言）+ `node test/contract-check.js`（openapi 契约字段校验）+ `node test/contract-scan.mjs`（前端读取 vs 后端响应一键扫描）+ `test/e2e-webui.mjs`（playwright，`E2E_CHROME`/`PWVIEWER_PLAYWRIGHT` env 化）
+
 **硬链接迁移语义**：同卷 `mv` 保留硬链接（inode 不变）；跨设备 `mv`/普通复制会解开成独立拷贝——**数据永不失**，只是重复文件恢复各自占用空间（本项目重复文件极少）。迁移建议整目录 `mv` 或 `rsync -H`。
 
 ## 命名模板（环境变量）
@@ -151,6 +157,12 @@ Pawchive 文件路径是 SHA-256 内容寻址（`/<2位>/<3位>/<64位hash>.<ext
 | `PAWCHIVE_DATA_ROOT` | 空 | 默认输出根目录（cli 参数 `path` 优先） |
 | `PAWCHIVE_CURL` | 自动探测 | curl 可执行文件路径（Alpine/BusyBox/NAS 可显式指定） |
 | `PAWCHIVE_LOG` | `./pawchive.log` | 日志文件路径 |
+| `PAWCHIVE_ATTACHMENTS_SUBDIR` | 空（帖根） | 附件子目录（naming 页附件目录字段） |
+| `PAWCHIVE_INCLUDE_REVISIONS` | `1` | 修订版本下载开关（0=关；`PAWCHIVE_REVISIONS_SUBDIR` 默认 `revisions` 子目录） |
+| `PAWCHIVE_CREATORS_TTL_DAY` | `7` | 创作者搜索缓存 TTL 天数 |
+| `PAWCHIVE_WEB_PROTOCOL` / `HOST` / `PORT` | `KToolBox-webui` / `0.0.0.0` / `8789` | WebUI 兼容层：协议选择 / 监听地址 / 端口 |
+| `PAWCHIVE_WEB_DB` | `./webui.db` | 兼容层 SQLite 库（固定库重启不丢状态） |
+| `PAWCHIVE_WEB_DEBUG` | 空 | `1` 开启启动端点自检（11 核心端点写日志） |
 
 完整变量模板见 `env.example`。
 
@@ -168,12 +180,13 @@ Pawchive 文件路径是 SHA-256 内容寻址（`/<2位>/<3位>/<64位hash>.<ext
 
 ## 未来规划
 
-- 项目定位 = **纯 CLI 下载器（不做前端）**：继续增强 CLI 能力（并发调度、反爬自适应限速、全量同步调度、更多平台适配）；上游 API 文档类产物由提取工具维护（见 `docs/` 留档）
+- 项目定位 = **CLI 下载器 + WebUI 兼容层**：CLI 持续增强（并发调度、反爬自适应限速、全量同步调度、更多平台适配）；WebUI 兼容层（KToolBox 前端接我们 Node 后端——协议切换）已落地（见上）；上游 API 文档类产物由提取工具维护（见 `docs/` 留档）
 
 ## 版本记录
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 1.0.3 | 2026-09-29 | WebUI 兼容层功能批次：auto-sync 真实实现（计划 CRUD/定时器/run-pause-resume——自动按作者下载）；创作者搜索（fetchAllCreators 缓存 7 天）；naming 保存写配置（env-compat 双向翻译）；①层前端错误注入（error-reporter → .client-errors.jsonl）；DEBUG 启动端点自检（PAWCHIVE_WEB_DEBUG=1）；作者软删 removed 机制；修订下载默认开；queued_files 对齐原版；legacy-migration 真实迁移；任务 spec.creators 双格式解析；契约扫描工具（contract-scan）；docs 全面重写（设计文档按代码逐节对齐） |
 | 1.0.2 | 2026-09-28 | 附件子目录开关（`PAWCHIVE_ATTACHMENTS_SUBDIR`）；dryrun 目录模拟；KToolBox 兼容层（`--gen-env` 一次性导出 + 同参数调用，env + ktoolbox.toml 命名模板映射）；migrate 双向（KToolBox→我们 + `--to-ktool` 我们→KToolBox，旧文件识别从 ktoolbox.toml 读）；KToolBox 风格 TTY 进度条（图形 Bar + 颜色）；缩略图已存在计入已存在、快速跳过帖计数；单帖统一收尾统计 |
 | 1.0.1 | 2026-09-28 | 快速跳过防漏网盘（帖 html driveLinks 字段按 provider 识别，历史帖自动补下网盘包）；缩略图已存在跳过（不重复下载）；网盘病毒确认页自动处理 + 断点续传 |
 | 1.0.0 | 2026-09-28 | 网盘下载集成（Google Drive provider 注册表可扩展、内容 sha256 跨帖去重复用、正文链接本地化）；缩略图回退；同名文件后缀；快速跳过与创作者 html 每帖刷新；worker 池式并发维持；HTTP 4xx/5xx 不重试；索引作者更新检测；全部环境变量化配置 |

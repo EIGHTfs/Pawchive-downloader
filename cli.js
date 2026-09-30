@@ -91,8 +91,11 @@ const CONFIG = {
   slowWaitMs: Number(process.env.PAWCHIVE_SLOW_WAIT_MS) || 60000,
   slowMax: Number(process.env.PAWCHIVE_SLOW_MAX) || 3,
   dataRoot: process.env.PAWCHIVE_DATA_ROOT || '',
-  attachmentsSubdir: process.env.PAWCHIVE_ATTACHMENTS_SUBDIR || '', // 附件子目录（默认空=帖根目录；设 attachments 等可配）
+  // 附件子目录：env 里空 / "." / "/" 三者等价 = 帖根目录（不建子目录）；设 attachments 等可配
+  attachmentsSubdir: ((v) => (v && v !== '.' && v !== '/' ? v : ''))(process.env.PAWCHIVE_ATTACHMENTS_SUBDIR || ''),
   downloadDrive: process.env.PAWCHIVE_DOWNLOAD_DRIVE !== '0', // 下载正文里的 Google Drive 网盘链接（默认开；'0'=关）
+  includeRevisions: process.env.PAWCHIVE_INCLUDE_REVISIONS !== '0', // 下载帖子修订版本（默认开——内容 sha256 硬链接去重不占额外空间；'0'=关；参考原版 include_revisions：每修订版下到 帖目录/<revisionsSubdir>/<revision_id>/）
+  revisionsSubdir: process.env.PAWCHIVE_REVISIONS_SUBDIR || 'revisions', // 修订版本子目录名（默认 'revisions'——原版 post_structure.revisions 同源；naming 响应/下载共用）
   webBase: process.env.PAWCHIVE_WEB_BASE || 'https://pawchive.pw', // 网页基址（原链接/创作者页 href）
   antibotSize: Number(process.env.PAWCHIVE_ANTIBOT_SIZE) || 376, // 反爬占位大小（file host bot 提示字节特征）
   http404PageMax: Number(process.env.PAWCHIVE_404_PAGE_MAX) || 4096, // 404/错误页判定：小于此大小才读头部判断
@@ -220,6 +223,50 @@ const listCreatorPosts = (service, userId, offset) =>
 
 const getPost = (service, userId, postId) =>
   apiRequest('GET', `/${service}/user/${encodeURIComponent(userId)}/post/${encodeURIComponent(postId)}`);
+
+/** 拉取帖子修订版本列表（Pawchive API /revisions——参考原版 list_post_revisions；Revision = Post + revision_id） */
+const fetchPostRevisions = (service, userId, postId) =>
+  apiRequest('GET', `/${service}/user/${encodeURIComponent(userId)}/post/${encodeURIComponent(postId)}/revisions`)
+    .then(r => (Array.isArray(r) ? r : []))
+    .catch(() => []); // 无修订/404 → 空列表（对齐原版 PawchiveNotFoundError 跳过）
+
+// ---------- 创作者全量列表（搜索用——Pawchive /creators 15MB 全量，缓存 .pawchive/creators-cache.json + TTL） ----------
+let creatorsCache = { ts: 0, data: null }; // 进程内缓存（避免多次拉 15MB）
+/** 拉取全部创作者（对齐原版 list_creators——全量缓存，TTL PAWCHIVE_CREATORS_TTL_DAY 默认 7 天；独立 fetch 长超时 120s 拉 15MB——失败返回 null 由调用方降级） */
+const fetchAllCreators = async (targetPath = '') => {
+  const ttl = (Number(process.env.PAWCHIVE_CREATORS_TTL_DAY) || 7) * 24 * 3600 * 1000;
+  const now = Date.now();
+  if (creatorsCache.data && now - creatorsCache.ts < ttl) return creatorsCache.data;
+  if (targetPath) { // 文件缓存（跨进程/重启复用——15MB 落 .pawchive gitignore 目录）
+    try {
+      const fp = path.join(targetPath, '.pawchive', 'creators-cache.json');
+      if (fs.existsSync(fp)) {
+        const cached = JSON.parse(fs.readFileSync(fp, 'utf8'));
+        if (Array.isArray(cached.data) && now - cached.ts < ttl) { creatorsCache = cached; return cached.data; }
+      }
+    } catch { /* 缓存损坏按重拉 */ }
+  }
+  let data = null;
+  try { // 独立 fetch（apiRequest 默认 30s 超时不够 15MB——长超时 120s）
+    const url = CONFIG.apiBase.replace(/\/+$/, '') + '/creators';
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 120000);
+    const res = await fetch(url, { method: 'GET', headers: { Accept: 'application/json' }, signal: ctl.signal });
+    clearTimeout(timer);
+    if (res.ok) data = await res.json();
+  } catch { /* 拉取失败降级 null（搜索返回空） */ }
+  if (Array.isArray(data)) {
+    creatorsCache = { ts: now, data };
+    if (targetPath) {
+      try {
+        const fp = path.join(targetPath, '.pawchive', 'creators-cache.json');
+        await fs.promises.mkdir(path.dirname(fp), { recursive: true });
+        await fs.promises.writeFile(fp, JSON.stringify({ ts: now, data }), 'utf8');
+      } catch { /* 缓存写失败不影响搜索 */ }
+    }
+  }
+  return data;
+};
 
 // ---------- 拉取索引（每页落盘、断点续拉） ----------
 /** 索引文件路径：<目标路径>/.pawchive/<service>-<userId>.index.json */
@@ -462,7 +509,7 @@ async function ensureUniqueCreatorDir(creatorDir, targetPath, service) {
 async function finalizePlan(plan, targetPath) {
   // 创作者目录名：模板渲染，空则回退 creator_id；大小写冲突时自动加 "(平台) " 前缀
   const baseName = sanitizeName(renderTemplate(CONFIG.creatorDirFormat, {
-    creator_name: plan.creatorName,
+    creator_name: plan.creatorName || plan.userId, // creatorName null 时兜底 userId（防模板渲染成 "null" 目录）
     creator_id: plan.userId,
     service: plan.service,
   }), true) || plan.userId;
@@ -1435,6 +1482,57 @@ async function initDownloadCtx(posts, meta, targetPath) {
 }
 
 /**
+ * 【下载帖子修订版本】参考原版 include_revisions：每个修订版下载到 帖目录/revisions/<revision_id>/（revision_dirname_format 用 {revision_id}）。
+ * 复用现有下载机制（planPostFiles + downloadWithDedup + hashIndex 去重 + writeOnePostIndex 写修订版索引）。
+ */
+async function downloadRevision(revision, postDir, hashIndex, { concurrency = 1, tty = false, creatorName = '', dryrun = false, onEvent } = {}) {
+  const emit = onEvent || (() => {});
+  const revisionDir = path.join(postDir, CONFIG.revisionsSubdir, String(revision.revision_id));
+  const jobs = planPostFiles(revision, revisionDir).map(j => ({ ...j, post: revision, postDir: revisionDir }));
+  const checked = [];
+  for (const job of jobs) {
+    let exists = false;
+    if (await fileExists(job.savePath)) exists = true; // 修订版无历史记录可比——存在即跳过
+    checked.push({ ...job, exists, corrupt: false });
+  }
+  if (dryrun) { // 复用现有 dryrun 语义：只展示计划不落盘（修订版文件列表）
+    console.log(`  [修订 ${revision.revision_id} DRYRUN] ${checked.map(j => `${j.exists ? '[已存在]' : '[新建]'} ${j.filename}`).join('\n  ')}`);
+    return { files: checked.length, downloaded: 0, existed: checked.filter(j => j.exists).length };
+  }
+  const todo = checked.filter(j => !j.exists);
+  const tracker = createProgressTracker(Math.max(1, todo.length), tty);
+  if (tty) tracker.render();
+  const inFlight = new Map(); // 同 URL 并发锁
+  let next = 0;
+  const postConc = Math.max(1, Math.min(concurrency, todo.length));
+  const workers = Array.from({ length: postConc }, async () => {
+    for (;;) {
+      const idx = next++;
+      if (idx >= todo.length) return;
+      const job = todo[idx];
+      emit({ type: 'job.queued', data: { creator: (job.post && job.post.creatorName) || '', filename: job.filename } }); // 文件 job 入队（对齐原版 job_queued——queued_files 累计）
+      const r = await downloadWithDedup(job, hashIndex, inFlight, {
+        onProgress: p => {
+          tracker.onProgress({ ...p, savePath: job.savePath });
+          emit({ type: 'job.progress', data: { filename: job.filename, percent: p.percent ?? null, size: p.size ?? null, speed: p.speed ?? null } });
+        },
+      });
+      const status = ['downloaded', 'downloaded_thumb', 'linked', 'copied'].includes(r.status) ? 'downloaded'
+        : ['exists', 'record_mismatch', 'thumb_exists'].includes(r.status) ? 'existed' : 'failed';
+      tracker.onFinish(job.savePath, status);
+      emit({ type: `job.${status}`, data: { filename: job.filename, size: r.size ?? null } });
+      if (!tty) console.log(`  [修订${status === 'downloaded' ? '下载' : status === 'existed' ? '已存在' : '失败'}] ${job.filename}`);
+    }
+  });
+  await Promise.all(workers);
+  if (tty) tracker.finishLine();
+  await writeOnePostIndex(revision, checked, creatorName, revisionDir); // 修订版索引 html（含文件列表/机读块）
+  emit({ type: 'revision.completed', data: { postId: revision.id, revisionId: revision.revision_id, files: checked.length, downloaded: tracker.counts.downloaded, existed: tracker.counts.existed } });
+  console.log(`  [修订 ${revision.revision_id}] ${checked.length} 文件（新 ${tracker.counts.downloaded} / 已有 ${tracker.counts.existed}）`);
+  return { files: checked.length, downloaded: tracker.counts.downloaded, existed: tracker.counts.existed };
+}
+
+/**
  * 【按帖子下载】只接受一个帖子链接（列表项）：解析该帖完整内容（getPost）并在其目录执行
  * 完整下载流程：前置 html → 源站校验[反爬检测] → 去重[大小不符覆盖] → 下载[.tmp 续传] →
  * 后置刷新 html。被 downloadAuthor 循环调用（次数 = 帖子数）；独立调用时自行初始化上下文并收尾。
@@ -1506,7 +1604,17 @@ async function downloadOnePost(listPost, meta, targetPath, opts = {}, shared = n
     allChecked.push(...checked);
     return { files: checked.length, downloaded: 0, failed: ctx.probeFail };
   }
-  if (dryrun) { allChecked.push(...checked); return { files: checked.length, downloaded: 0, failed: 0 }; } // dryrun 只展示计划
+  if (dryrun) {
+    // dryrun 也展示修订版本计划（默认开修订——fetchPostRevisions + downloadRevision dryrun 不落盘）
+    if (CONFIG.includeRevisions) {
+      const revisions = await fetchPostRevisions(meta.service, meta.userId, detail.id || listPost.id);
+      for (const rev of revisions) {
+        if (!rev || rev.revision_id == null) continue;
+        await downloadRevision(rev, postDir, hashIndex, { concurrency, tty, creatorName: plan.creatorName, dryrun, onEvent: emit });
+      }
+    }
+    allChecked.push(...checked); return { files: checked.length, downloaded: 0, failed: 0 };
+  } // dryrun 只展示计划
 
   // ③ 前置 html：下载前先生成该帖索引（html 先落盘；已存在则覆盖重写，size 按下载前实态）
   await writeOnePostIndex(detail, checked, plan.creatorName, targetPath);
@@ -1525,6 +1633,7 @@ async function downloadOnePost(listPost, meta, targetPath, opts = {}, shared = n
       const idx = next++;
       if (idx >= todoJobs.length) return;
       const job = todoJobs[idx];
+      emit({ type: 'job.queued', data: { creator: '', filename: job.filename } }); // 修订文件入队（对齐原版 job_queued）
       const r = await downloadWithDedup(job, hashIndex, inFlight, {
         onProgress: p => {
           tracker.onProgress({ ...p, savePath: job.savePath });
@@ -1565,6 +1674,14 @@ async function downloadOnePost(listPost, meta, targetPath, opts = {}, shared = n
   allChecked.push(...checked);
   // ⑥ 每帖下载完即刷新创作者级总览 html（含全跳过帖；并发完成由串行写锁逐个刷新，中断后可看实时进度）
   await writeCreatorIndex(plan, targetPath);
+  // ⑥.5 修订版本下载（PAWCHIVE_INCLUDE_REVISIONS=1 时——参考原版 include_revisions：每修订版下到 帖目录/revisions/<revision_id>/）
+  if (CONFIG.includeRevisions) {
+    const revisions = await fetchPostRevisions(meta.service, meta.userId, detail.id || listPost.id);
+    for (const rev of revisions) {
+      if (!rev || rev.revision_id == null) continue;
+      await downloadRevision(rev, postDir, hashIndex, { concurrency: postConc, tty, creatorName: plan.creatorName, dryrun, onEvent: emit });
+    }
+  }
   emit({ type: 'post.completed', data: { postId: detail.id || listPost.id, title: detail.title || '', files: checked.length, downloaded: tracker.counts.downloaded, existed: checked.filter(j => j.exists && !j.corrupt).length, failed: tracker.counts.failed } });
   return { files: checked.length, downloaded: tracker.counts.downloaded, failed: tracker.counts.failed };
 }
@@ -1750,6 +1867,7 @@ module.exports = {
   walkHtmlFiles, buildHashIndex, linkOrCopy, downloadWithDedup, downloadFile, streamOnce,
   finalizePlan, collectPostFiles, writeOnePostIndex, writeCreatorIndex,
   fetchPostsByUrl, downloadOnePost, downloadAuthor,
+  getPost, fetchPostRevisions, fetchAllCreators, // Pawchive 单帖详情 + 修订版本列表 + 创作者全量（兼容层搜索用）
   NETDISK_PROVIDERS, downloadNetdiskFiles, // 网盘 provider 注册表 + 下载（测试/兼容层复用）
   indexFileFor, loadIndex, saveIndex, fetchPostsWithResume,
 };

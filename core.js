@@ -63,9 +63,27 @@ CREATE TABLE IF NOT EXISTS creators_profile (
   creator_id TEXT NOT NULL,
   alias TEXT,
   enabled INTEGER NOT NULL DEFAULT 1,
+  removed INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (service, creator_id)
 );
+CREATE TABLE IF NOT EXISTS auto_sync_plans (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  creators TEXT NOT NULL DEFAULT '[]',
+  schedule TEXT NOT NULL DEFAULT '{}',
+  next_run_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 `);
+
+// 服务启动清理：上次运行中断的 ACTIVE 任务 → interrupted（防重启后残留 running 卡死——downloadTask 进程已死但 DB 状态未收）
+try {
+  db.prepare(`UPDATE tasks SET status = 'interrupted', error = '服务重启中断（任务未完成）' WHERE status IN ('queued', 'blocked', 'running', 'pause_requested', 'stop_requested')`).run();
+  db.prepare(`UPDATE task_attempts SET status = 'interrupted' WHERE status = 'running'`).run();
+  db.prepare(`ALTER TABLE creators_profile ADD COLUMN removed INTEGER NOT NULL DEFAULT 0`).run(); // 旧库迁移：软删标记列（已存在则 SQLite 报错忽略）
+} catch { /* 表不存在/列已存在等初始化早期异常忽略 */ }
 
 const nowIso = () => new Date().toISOString();
 
@@ -177,18 +195,18 @@ function listAttempts(taskId) {
 }
 
 // ---------- 创作者浏览（读 pawchive-index 双级索引；业务内核） ----------
-/** 创作者编辑持久化（前端 CreatorsPage 开关/别名）：INSERT OR REPLACE */
+/** 创作者编辑持久化（前端 CreatorsPage 开关/别名）：INSERT OR REPLACE（removed=0——添加/编辑即恢复软删作者） */
 function updateCreatorProfile(service, creator_id, { alias = null, enabled = 1 } = {}) {
-  db.prepare('INSERT INTO creators_profile (service, creator_id, alias, enabled) VALUES (?,?,?,?) ON CONFLICT(service, creator_id) DO UPDATE SET alias=excluded.alias, enabled=excluded.enabled')
+  db.prepare('INSERT INTO creators_profile (service, creator_id, alias, enabled, removed) VALUES (?,?,?,?,0) ON CONFLICT(service, creator_id) DO UPDATE SET alias=excluded.alias, enabled=excluded.enabled, removed=0')
     .run(service, creator_id, alias, enabled ? 1 : 0);
   return getCreatorProfile(service, creator_id);
 }
 function getCreatorProfile(service, creator_id) {
   const row = db.prepare('SELECT * FROM creators_profile WHERE service=? AND creator_id=?').get(service, creator_id);
-  return row ? { service: row.service, creator_id: row.creator_id, alias: row.alias, enabled: !!row.enabled } : null;
+  return row ? { service: row.service, creator_id: row.creator_id, alias: row.alias, enabled: !!row.enabled, removed: !!row.removed } : null;
 }
 function deleteCreatorProfile(service, creator_id) {
-  db.prepare('DELETE FROM creators_profile WHERE service=? AND creator_id=?').run(service, creator_id);
+  db.prepare('UPDATE creators_profile SET removed = 1 WHERE service=? AND creator_id=?').run(service, creator_id); // 软删（removed 标记——列表排除——下载目录保留可恢复）
 }
 /** 索引列表合并编辑记录（alias 显示名 + enabled） */
 function listCreators(targetPath) {
@@ -205,8 +223,10 @@ function listCreators(targetPath) {
       if (!m) continue;
       const obj = JSON.parse(m[1]);
       if (!obj || obj.type !== 'creator') continue;
+      if (/\[object /.test(String(obj.service || '')) || /\[object /.test(String(obj.userId || ''))) continue; // 异常标识（object 字符串化）——跳过不进列表（前端无法移除的条目）
       const avatars = (obj.avatars || []).filter(a => a.exists);
       const profile = getCreatorProfile(obj.service || '', obj.userId || '');
+      if (profile && profile.removed) continue; // 软删作者（已移除）——列表排除（下载目录保留——不误删数据）
       let avatar = null;
       if (avatars[0]) { const avatarFile = path.join(targetPath, ent.name, avatars[0].rel); if (fs.existsSync(avatarFile)) avatar = avatars[0].rel; } // avatar_url 仅当文件真实存在（防 404 图）
       out.push({
@@ -237,6 +257,7 @@ function progressReducer() {
           if (typeof d.speed === 'number') p.speed_bps = d.speed;
           if (typeof d.percent === 'number') p.active_downloads[d.filename || ''] = { filename: d.filename, percent: d.percent, speed: d.speed, size: d.size };
           break;
+        case 'job.queued': p.queued_files++; break; // 文件 job 入队（对齐原版 job_queued——累计入队数）
         case 'job.downloaded': p.completed_files++; p.processed_files++; break;
         case 'job.existed': p.existing_files++; p.processed_files++; break;
         case 'job.failed': p.failed_files++; p.processed_files++; break;
@@ -267,7 +288,7 @@ async function downloadTask(taskId, spec, targetPath, { postInterval = 5, concur
   startAttempt(taskId, 1, spec, { concurrency, postInterval });
   eventStore.publish({ event_type: 'task.progress', task_id: taskId, data: { phase: 'started' } });
   try {
-    const fetched = await cli.fetchPostsByUrl(url); // 拉作者/帖子列表（分页缓存复用）
+    const fetched = await cli.fetchPostsByUrl(url, targetPath); // 拉作者/帖子列表（分页缓存复用——必须传 targetPath：内部 indexFileFor 缓存索引 path.join(targetPath) 缺则 path undefined 崩）
     const result = await cli.downloadAuthor(fetched.posts, fetched.meta, targetPath, { concurrency, postInterval, dryrun, onEvent });
     const final = prog.current();
     updateTaskProgress(taskId, final);
@@ -284,31 +305,92 @@ async function downloadTask(taskId, spec, targetPath, { postInterval = 5, concur
   }
 }
 
-// ---------- naming（模板映射：PAWCHIVE_*_FORMAT ↔ ktool naming 契约） ----------
+// ---------- naming（模板映射：env 中枢 readPawchiveEnv → ktool naming 契约——统一读 env，不依赖 cli.CONFIG） ----------
+const envCompat = require('./scripts/KToolBox-env-compat.js'); // env 翻译中枢（兼容层强制读——env 相关全走它）
 function getNaming() {
+  const c = envCompat.readPawchiveEnv(); // PAWCHIVE_* → 配置对象（attachmentsSubdir/indexFilename/revisionsSubdir/模板）
   return {
-    default_output: cli.CONFIG.dataRoot, resolved_default_output: cli.CONFIG.dataRoot,
+    default_output: c.dataRoot, resolved_default_output: c.dataRoot,
     naming: {
-      creator_dirname_format: cli.CONFIG.creatorDirFormat,
-      post_dirname_format: cli.CONFIG.postDirFormat,
+      creator_dirname_format: c.creatorDirFormat,
+      post_dirname_format: c.postDirFormat,
       revision_dirname_format: '{revision_id}', // 无 revision 概念（默认）
-      filename_format: cli.CONFIG.fileFormat, // 顶层 filename_format（前端 normalizeNaming 读此字段——缺失会导致 draft.filename_format undefined → invalidTemplate .trim 崩）
-      post_structure: { attachments: cli.CONFIG.attachmentsSubdir || 'attachments', content: 'content.txt', external_links: 'external_links.txt', file: '{id}_{}', revisions: 'revisions' },
+      filename_format: c.filenameFormat, // 顶层 filename_format（前端 normalizeNaming 读此字段——缺失会导致 draft.filename_format undefined → invalidTemplate .trim 崩）
+      post_structure: { attachments: c.attachmentsSubdir ? c.attachmentsSubdir : '.', content: c.indexFilename, external_links: 'html', file: '{id}_{}', revisions: c.revisionsSubdir },
       mix_posts: false, sequential_filename: true, sequential_filename_excludes: [], group_by_year: false, group_by_month: false,
       year_dirname_format: '{year}', month_dirname_format: '{year}-{month:02d}',
     },
     published_time: {}, revision: '0',
   };
 }
-/** 更新 .env 文件（KEY=VALUE 替换/追加——cli 读 .env 即时生效） */
+/** 更新 .env 文件（统一转发 env 中枢 writeEnv——cli 读 .env 即时生效） */
 function updateEnvFile(key, value) {
-  const envPath = path.join(__dirname, '.env');
-  let text = '';
-  try { text = fs.readFileSync(envPath, 'utf8'); } catch { /* 无 .env 则新建 */ }
-  const line = `${key}=${value}`;
-  if (new RegExp(`^${key}=.*$`, 'm').test(text)) text = text.replace(new RegExp(`^${key}=.*$`, 'm'), line);
-  else text += (text.endsWith('\n') || text === '' ? '' : '\n') + line + '\n';
-  fs.writeFileSync(envPath, text, 'utf8');
+  return envCompat.writeEnv(key, value, path.join(__dirname, '.env'));
 }
 
-module.exports = { db, eventStore, EventStore, cli, TASK_STATUS, ACTIVE, TERMINAL, createTask, getTask, listTasks, updateTaskStatus, updateTaskProgress, startAttempt, finishAttempt, listAttempts, listCreators, updateCreatorProfile, getCreatorProfile, deleteCreatorProfile, downloadTask, getNaming, updateEnvFile, nowIso, CONFIG: cli.CONFIG };
+// ---------- 创作者搜索（对齐原版 search_creator：fetchAllCreators 全量缓存 + 本地 matches 过滤：id/name 包含不区分大小写/service） ----------
+async function searchCreators({ id = null, name = null, service = null } = {}, targetPath = '') {
+  const all = await cli.fetchAllCreators(targetPath);
+  if (!Array.isArray(all)) return [];
+  const nameQ = name ? String(name).toLowerCase() : null;
+  const out = [];
+  for (const c of all) {
+    if (id && String(c.id) !== String(id)) continue;
+    if (nameQ && !String(c.name || '').toLowerCase().includes(nameQ)) continue;
+    if (service && c.service !== service) continue;
+    out.push({ service: c.service || '', creator_id: String(c.id || ''), name: c.name || '', updated: c.updated || null, favorited: c.favorited || 0 });
+  }
+  return out.slice(0, 100); // 搜索上限（避免超大列表）
+}
+
+// ---------- 自动同步（auto-sync：计划=作者列表+间隔 → 定时触发 sync 任务——自动按作者下载；复用 downloadTask） ----------
+const planToIntervalMs = s => { const every = Number((s && s.every) || 24) || 24; const unit = (s && s.unit) || 'hours'; return every * (unit === 'minutes' ? 60 : unit === 'days' ? 86400 : 3600) * 1000; };
+function getAutoSyncPlan(id) {
+  const r = db.prepare(`SELECT * FROM auto_sync_plans WHERE id = ?`).get(id);
+  if (!r) return null;
+  return { id: r.id, name: r.name, enabled: !!r.enabled, creators: JSON.parse(r.creators || '[]'), schedule: JSON.parse(r.schedule || '{}'), next_run_at: r.next_run_at, created_at: r.created_at, updated_at: r.updated_at };
+}
+function createAutoSyncPlan({ id, name, enabled = true, creators = [], schedule = {} }) {
+  const now = nowIso();
+  db.prepare(`INSERT INTO auto_sync_plans (id, name, enabled, creators, schedule, next_run_at, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)`)
+    .run(id, name, enabled ? 1 : 0, JSON.stringify(creators || []), JSON.stringify(schedule || {}), new Date(Date.now() + planToIntervalMs(schedule)).toISOString(), now, now);
+  return getAutoSyncPlan(id);
+}
+function listAutoSyncPlans() {
+  return db.prepare(`SELECT * FROM auto_sync_plans ORDER BY created_at`).all().map(r => getAutoSyncPlan(r.id));
+}
+function deleteAutoSyncPlan(id) { db.prepare(`DELETE FROM auto_sync_plans WHERE id = ?`).run(id); }
+function updateAutoSyncPlan(id, { enabled, creators, schedule, name } = {}) {
+  const cur = getAutoSyncPlan(id); if (!cur) return null;
+  const merged = { ...cur, ...(name !== undefined ? { name } : {}), ...(enabled !== undefined ? { enabled } : {}), ...(creators !== undefined ? { creators } : {}), ...(schedule !== undefined ? { schedule } : {}) };
+  db.prepare(`UPDATE auto_sync_plans SET name=?, enabled=?, creators=?, schedule=?, next_run_at=?, updated_at=? WHERE id=?`)
+    .run(merged.name, merged.enabled ? 1 : 0, JSON.stringify(merged.creators || []), JSON.stringify(merged.schedule || {}), new Date(Date.now() + planToIntervalMs(merged.schedule)).toISOString(), nowIso(), id);
+  return getAutoSyncPlan(id);
+}
+let autoSyncTimer = null;
+/** 触发计划（立即运行/定时器共用）：每 creator 建一个 sync 任务（自动按作者下载） */
+function triggerAutoSyncPlan(plan, targetPath, { concurrency = 5, postInterval = 5 } = {}) {
+  for (const key of (plan && plan.creators) || []) {
+    const [service, creator_id] = String(key).split(':');
+    if (!service || !creator_id) continue;
+    const taskId = `as-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    createTask({ id: taskId, spec: { kind: 'sync', service, creator_id, creators: [{ service, creator_id }], output: targetPath, save_creator_indices: false, offset: 0, keywords: [], keywords_exclude: [] } });
+    downloadTask(taskId, { service, creator_id }, targetPath, { concurrency, postInterval }).catch(err => console.error(`[auto-sync ${taskId}] ${err && err.message || err}`));
+  }
+}
+/** 启动自动同步调度（服务启动调一次）：每分钟扫到期计划 → 触发 sync 任务 */
+function startAutoSyncScheduler(targetPath, { concurrency = 5, postInterval = 5 } = {}) {
+  if (autoSyncTimer) clearInterval(autoSyncTimer);
+  const tick = async () => {
+    const now = Date.now();
+    for (const p of listAutoSyncPlans()) {
+      if (!p.enabled || !p.next_run_at || new Date(p.next_run_at).getTime() > now) continue;
+      triggerAutoSyncPlan(p, targetPath, { concurrency, postInterval });
+      updateAutoSyncPlan(p.id, {});
+    }
+  };
+  tick();
+  autoSyncTimer = setInterval(tick, 60000);
+}
+
+module.exports = { db, eventStore, EventStore, cli, TASK_STATUS, ACTIVE, TERMINAL, createTask, getTask, listTasks, updateTaskStatus, updateTaskProgress, startAttempt, finishAttempt, listAttempts, listCreators, updateCreatorProfile, getCreatorProfile, deleteCreatorProfile, downloadTask, getNaming, updateEnvFile, searchCreators, createAutoSyncPlan, listAutoSyncPlans, getAutoSyncPlan, deleteAutoSyncPlan, updateAutoSyncPlan, startAutoSyncScheduler, triggerAutoSyncPlan, nowIso, CONFIG: cli.CONFIG };

@@ -138,6 +138,16 @@ async function main() {
     const sse = await reqSSE('/api/v1/events?after=0');
     check('events SSE → 200 text/event-stream（retry 头）', sse.status === 200 && (sse.headers['content-type'] || '').includes('text/event-stream') && sse.body.includes('retry: 3000'), `status=${sse.status}`);
 
+    // 6.5 naming post_structure 映射我们结构（env 中枢读取）
+    r = await req('GET', '/api/v1/naming');
+    const nv = r.json();
+    check('naming post_structure 映射我们结构（content=索引文件名）', r.status === 200 && nv?.naming?.post_structure?.content === 'pawchive-index.html', `status=${r.status} ${JSON.stringify(nv?.naming?.post_structure).slice(0, 80)}`);
+    check('naming default_output=DATA_ROOT（服务进程 env）', typeof nv?.default_output === 'string' && nv.default_output.length > 0, `default_output=${nv?.default_output}`);
+
+    // 6.6 创作者搜索（真实——首次拉全量 15MB 缓存，断言 200 数组）
+    r = await req('GET', '/api/v1/pawchive/creators?name=RenKamui&service=patreon');
+    check('pawchive/creators 搜索 → 200 array', r.status === 200 && Array.isArray(r.json()), `status=${r.status}`);
+
     // 7. 404 边界
     r = await req('GET', '/api/v1/mcp/status');
     check('mcp → 404（设计删除）', r.status === 404);

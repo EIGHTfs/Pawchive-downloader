@@ -12,9 +12,34 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
+
+// debug 开关常量（PAWCHIVE_WEB_DEBUG=1 开启——服务启动时自动检查核心端点并写自检日志）
+const DEBUG = process.env.PAWCHIVE_WEB_DEBUG === '1';
+
+/** 启动端点自检（DEBUG 开启时——启动即自动检查核心端点——每端点即时写日志；legacy-migration 重扫描 40s 不纳入） */
+async function startupSelfCheck() {
+  const endpoints = ['/api/v1/health', '/api/v1/session', '/api/v1/creators', '/api/v1/tasks', '/api/v1/project', '/api/v1/naming', '/api/v1/config/schema?locale=zh-CN', '/api/v1/config/project', '/api/v1/filesystem?path=', '/api/v1/auto-sync/plans', '/api/v1/config/dotenv/.env'];
+  const base = `http://${HOST}:${PORT}`;
+  console.log(`[web] 启动端点自检开始（DEBUG）：${endpoints.length} 端点`);
+  let bad = 0;
+  for (const ep of endpoints) {
+    try {
+      const r = await fetch(base + ep, { signal: AbortSignal.timeout(10000) });
+      const ok = /^2/.test(String(r.status));
+      if (!ok) bad++;
+      console.log(`  ${ok ? '✓' : '✗'} ${r.status} ${ep}`);
+    } catch (e) { bad++; console.log(`  ✗ FAIL ${ep}: ${String(e.message || e).slice(0, 50)}`); }
+  }
+  console.log(`[web] 启动端点自检完成：异常 ${bad} 个`);
+}
 const core = require('./core.js');
 
 const STATIC_DIR = path.join(__dirname, 'webui-static');
+
+// 前端全局错误捕获（①层——browser-error-observability 三件套）：window.onerror + unhandledrejection + 资源 error
+// → POST /api/v1/client-error → adapter 写 .client-errors.jsonl → AI read/tail 定位（AI 无视觉感知浏览器错误）
+const ERROR_REPORTER = '<script>\n(function(){var N="/api/v1/client-error",n=0;function r(p){if(n++>20)return;try{navigator.sendBeacon(N,JSON.stringify(Object.assign({ts:Date.now(),href:location.href,ua:navigator.userAgent},p)));}catch(_){try{fetch(N,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(p),keepalive:true}).catch(function(){})}catch(__){}}}\nwindow.addEventListener("error",function(e){if(e.target&&e.target!==window){r({type:"resource",tag:e.target.tagName,src:e.target.src||e.target.href});}else{var f=e.filename||"";if(f.indexOf("chrome-extension://")===0)return;r({type:"error",message:String(e.message),source:f,lineno:e.lineno,colno:e.colno,stack:(e.error&&e.error.stack)||""});}},true);\nwindow.addEventListener("unhandledrejection",function(e){var er=e.reason;r({type:"unhandledrejection",message:(er&&er.message)||String(er),stack:(er&&er.stack)||""});});\n})();\n</script>';
+let cachedIndexHtml = null; // 注入结果缓存（性能：避免每次响应 replace）
 const HOST = process.env.PAWCHIVE_WEB_HOST || '0.0.0.0';
 const PORT = Number(process.env.PAWCHIVE_WEB_PORT) || 8789;
 const protocolName = process.env.PAWCHIVE_WEB_PROTOCOL || 'KToolBox-webui';
@@ -41,12 +66,16 @@ function serveStatic(pathname, req, res) {
   if (!file.startsWith(STATIC_DIR) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
     // SPA fallback：非 API 路径回 index.html
     const idx = path.join(STATIC_DIR, 'index.html');
-    if (fs.existsSync(idx)) { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(fs.readFileSync(idx)); return; }
+    if (fs.existsSync(idx)) {
+      if (cachedIndexHtml === null) cachedIndexHtml = fs.readFileSync(idx, 'utf8').replace('</head>', ERROR_REPORTER + '</head>'); // 注入 error-reporter（①层——Spa fallback 也注入）
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(cachedIndexHtml); return;
+    }
     res.writeHead(404); res.end('Not Found'); return;
   }
   const ext = path.extname(file).toLowerCase();
+  if (ext === '.html' && rel === 'index.html' && cachedIndexHtml === null) cachedIndexHtml = fs.readFileSync(file, 'utf8').replace('</head>', ERROR_REPORTER + '</head>');
   res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=31536000' });
-  res.end(fs.readFileSync(file));
+  res.end(cachedIndexHtml !== null && ext === '.html' && rel === 'index.html' ? cachedIndexHtml : fs.readFileSync(file));
 }
 
 const server = http.createServer(async (req, res) => {
@@ -59,10 +88,13 @@ const server = http.createServer(async (req, res) => {
       serveStatic(pathname, req, res);
     }
   } catch (err) {
+    console.error(`[web] 500 ${req.method} ${pathname}: ${err && err.stack || err}`); // 错误落日志（可观测性——客户端报错可查栈）
     json(res, 500, { detail: String(err && err.message || err) });
   }
 });
 
 server.listen(PORT, HOST, () => {
   console.log(`[web] Pawchive WebUI 兼容层 http://${HOST}:${PORT}（协议: ${protocolName}，DB: ${core.db ? path.basename(process.env.PAWCHIVE_WEB_DB || 'webui.db') : '-'}）`);
+  if (typeof core.startAutoSyncScheduler === 'function') core.startAutoSyncScheduler(core.CONFIG.dataRoot || ''); // 自动同步调度（计划到期触发 sync 任务）
+  if (DEBUG) startupSelfCheck(); // debug 开关——启动端点自检（写日志）
 });

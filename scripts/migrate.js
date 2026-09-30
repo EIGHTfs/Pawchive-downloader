@@ -177,6 +177,7 @@ function runMigration() {
   const stats = { moved: 0, skippedConflict: 0, genIndex: 0, oldRemoved: 0, dirRemoved: 0 };
   const planLines = [];
   cli.log(`[迁移] ${flags.dryrun ? '模拟' : '执行'} 开始：范围 ${flags.target || root}（attachments ${attDirs.length}，旧文件 ${oldFiles.length}）`);
+  console.log(`[迁移] ${flags.dryrun ? '模拟' : '执行'} 开始：范围 ${flags.target || root}（attachments ${attDirs.length}，旧文件 ${oldFiles.length}）`); // stdout 统计行（兼容层 legacy-migration 检测解析用）
 
   // 1) 附件平铺：attachments/<f> → 父目录/<f>
   for (const { dir, parent } of attDirs) {

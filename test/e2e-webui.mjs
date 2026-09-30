@@ -16,7 +16,7 @@ if (!CHROME || !PW_PATH) {
 const { chromium } = await import('file://' + PW_PATH);
 
 const BASE = process.argv[2] || 'http://127.0.0.1:8790/';
-const PAGES = ['', 'creators', 'tasks', 'naming', 'configuration', 'blockers', 'about'];
+const PAGES = ['', 'creators', 'naming', 'configuration', 'blockers', 'about', 'tasks']; // tasks 后置（该页 chromium 环境崩会断后续——先测渲染页捕获 pageerror）
 
 const browser = await chromium.launch({
   executablePath: CHROME,

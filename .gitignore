@@ -1,5 +1,12 @@
-tools/
-docs/
+# 工具脚本：研究期一次性工具忽略；契约/API 提取工具（更新上游契约时复用）白名单入库
+tools/*
+!tools/extract-contract.cjs
+!tools/extract-css.mjs
+!tools/extract-ktool-apis.py
+
+# 文档：自研 md 全部入库（审计/分析/结论/记录）；docs/.probe-ktoolbox 是上游 KToolBox 完整克隆（另仓库管理）不入库
+docs/*
+!docs/*.md
 
 # 回收站 / 内部运行数据
 .trash/
@@ -28,3 +35,8 @@ node_modules.orig/
 webui.db
 webui.db-wal
 webui.db-shm
+# 前端重建备份目录（webui-static/.bak-*/ 与 static.bak-*/——审计扫到不入库）
+.bak-*/
+
+# webui-static bundle 备份目录（同级 webui-static.bak-*——更新 bundle 的快照——不入库）
+webui-static.bak-*/
