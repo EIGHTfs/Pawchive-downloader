@@ -278,6 +278,7 @@ node mcp-server.js   # stdio MCP 协议（无参数）
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.0.1 | 2026-10-01 | **进度条升级**：独立模块 `progress.js` 多行渲染（每个下载任务一行 + 底部汇总行，ANSI 上移重绘不互相覆盖）；`--progress <style>` 参数 / env `PAWCHIVE_PROGRESS` 指定样式——`single` 单行汇总 / `multi` 多行每任务一行（默认）/ `ipull` 模仿 ipull fancy（状态图标 ↓下载/→复用 + 名称/大小/百分比/bar/速度列对齐）；同批修复：跨进程锁死锁检测（process.kill 跨平台）、拿不到锁等待重查不误报、网盘日志关键部分（idTail） |
 | v1.0.0 | 2026-10-01 | **MCP server（供 AI 使用）**：新增 `mcp-server.js`——stdio 传输、零依赖手写 MCP JSON-RPC（initialize/tools/list/tools/call），复用 core.js 业务能力暴露 **32 个 MCP 工具**（任务全套 12 / 创作者 5 / auto-sync 8 / 查询配置 5 / blockers 2）；v1 无鉴权 + env `PAWCHIVE_MCP_TOKEN` 可选 Bearer；DSH 等 MCP 客户端 stdio 拉起即可用（第三个协议面——引擎 cli / 业务 core / 协议 adapter+MCP server） |
 | v0.9.0 | 2026-09-30 | 审计提分批次：真魔数提取（CONFIG fetchTimeoutMs/netdiskKeepMinBytes/probeWindowMs + MAGIC 常量）、单字母变量全量重命名（cli/core/adapter/server/scripts 约 50 处）、高复杂度函数抽公共（downloadNetdiskFiles/downloadCreatorAvatars/buildHashIndex 拆子函数）、empty-catch 补语义注释、进度条独立模块 progress.js、审查缺陷修复（downloadRevision abortCtl/跨进程锁/缓存键） |
 | v0.8.0 | 2026-09-30 | 文档整理批次：14 份审计/排查/调查/核对文档合并升级为 `docs/调查审计与行为核对-权威指南.md`（权威现状速查 22 项已修复 + 5 项仍开放 + 历史来源索引可追溯）；新增 3 份设计指南（`行为对齐-设计指南`/`KToolBox-bugfix-PR设计指南`/`KToolBox前端接入-设计指南`）；cli.js 跨进程锁死锁检测增强（锁读 pid → /proc/<pid> 存活判定，进程死立即解锁而非等 24h 过期）；fast-skip-benchmark 措辞清理；docs 旧调查文档移除 |

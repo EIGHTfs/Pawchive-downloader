@@ -851,7 +851,7 @@ async function downloadFile(job, { onProgress = null, expectedSize: optExpected 
       filename: job.filename,
       doneBytes: written,
       total: effectiveTotal || null,
-      percent: effectiveTotal ? Math.min(100, (written / effectiveTotal) * 100) : 0,
+      percent: effectiveTotal ? Math.min(100, ((tempSize + written) / effectiveTotal) * 100) : 0, // 续传进度含 .tmp 已有部分（written 是本次 curl 传输量——不含断点起点）
       speed,
     });
   };
@@ -2044,7 +2044,7 @@ async function main() { // dsh-skip-func-length（主流程编排，含计划/�
     else if (a === '--offset') flags.offset = parseInt(args[++i], 10) || 0;
     else if (a === '--length') flags.length = parseInt(args[++i], 10);
     else if (a === '--concurrency') flags.concurrency = Math.max(1, parseInt(args[++i], 10) || 1);
-    
+    else if (a === '--progress') { flags.progress = args[++i] || 'multi'; process.env.PAWCHIVE_PROGRESS = flags.progress; } // 进度条样式（single/multi/ipull——参数优先覆盖 env，progress.js 读）
     else if (a === '--index') flags.index = args[++i];
     else if (a.startsWith('-')) { console.error(`未知参数: ${a}`); process.exit(2); }
     else positional.push(a);
