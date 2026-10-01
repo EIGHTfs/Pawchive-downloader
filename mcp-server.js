@@ -84,8 +84,9 @@ tool('rerun_task', '重跑任务（清进度/错误，attempt+1，重新调度�
 tool('cleanup_preview', '预览任务产物清理清单（delete outputs 安全清理的 dry-run）', { id: str('任务 id', true), token: str() }, 'mcp:read', 'read', async (p) => core.previewTaskArtifacts ? core.previewTaskArtifacts(p.id) : { files: [] });
 
 // ---- 创作者 ----
-tool('list_creators', '列出已收录创作者', { token: str() }, 'mcp:read', 'read', async () => core.listCreators());
-tool('search_creators', '搜索创作者（按 id/name/service）', { id: str('创作者 id'), name: str('名字关键词'), service: str('平台 service'), token: str() }, 'mcp:read', 'read', async (p) => core.searchCreators({ id: p.id || null, name: p.name || null, service: p.service || null }));
+const DATA_ROOT = () => (core.CONFIG && core.CONFIG.dataRoot) || process.env.PAWCHIVE_DATA_ROOT || ''; // 作者数据根（listCreators/searchCreators 需 targetPath）
+tool('list_creators', '列出已收录创作者', { token: str() }, 'mcp:read', 'read', async () => core.listCreators(DATA_ROOT()));
+tool('search_creators', '搜索创作者（按 id/name/service）', { id: str('创作者 id'), name: str('名字关键词'), service: str('平台 service'), token: str() }, 'mcp:read', 'read', async (p) => core.searchCreators({ id: p.id || null, name: p.name || null, service: p.service || null }, DATA_ROOT()));
 tool('add_creator', '收录创作者（写 profile；enabled 默认开）', { service: str('平台 service（patreon/fantia 等）', true), creator_id: str('创作者 id', true), alias: str('显示别名'), enabled: bool('是否启用下载（默认 1）'), token: str() }, 'mcp:write', 'write', async (p) => core.updateCreatorProfile(p.service, p.creator_id, { alias: p.alias || null, enabled: p.enabled === false ? 0 : 1 }));
 tool('update_creator', '更新创作者（别名/启用状态）', { service: str('平台 service', true), creator_id: str('创作者 id', true), alias: str('新别名'), enabled: bool('启用/停用'), token: str() }, 'mcp:write', 'write', async (p) => core.updateCreatorProfile(p.service, p.creator_id, { alias: p.alias !== undefined ? p.alias : null, enabled: p.enabled !== undefined ? (p.enabled ? 1 : 0) : 1 }));
 tool('delete_creator', '从列表移除创作者（软删 removed 标记——下载目录保留）', { service: str('平台 service', true), creator_id: str('创作者 id', true), token: str() }, 'mcp:write', 'destructive', async (p) => core.deleteCreatorProfile(p.service, p.creator_id));
