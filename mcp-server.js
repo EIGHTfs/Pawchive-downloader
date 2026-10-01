@@ -76,10 +76,10 @@ tool('resume_task', '恢复任务（写回 queued 重新调度）', { id: str('�
 });
 tool('rerun_task', '重跑任务（清进度/错误，attempt+1，重新调度）', { id: str('任务 id', true), token: str() }, 'mcp:write', 'write', async (p) => {
   core.db.prepare('DELETE FROM task_attempts WHERE task_id = ?').run(p.id); // 防 sequence=1 唯一冲突（对齐 rerun 修复）
-  core.db.prepare('UPDATE tasks SET error = NULL, failure = NULL WHERE id = ?').run(p.id);
+  core.db.prepare('UPDATE tasks SET progress_json = ?, error = NULL, failure_json = NULL, revision = revision + 1, updated_at = ? WHERE id = ?').run('{}', core.nowIso(), p.id);
   core.updateTaskStatus(p.id, 'queued');
   core.scheduleTick && core.scheduleTick();
-  return { id: p.id, status: 'queued', note: 'attempt 记录已清，重新调度' };
+  return { id: p.id, status: 'queued', note: 'attempt 记录已清，revision+1，重新调度' };
 });
 tool('cleanup_preview', '预览任务产物清理清单（delete outputs 安全清理的 dry-run）', { id: str('任务 id', true), token: str() }, 'mcp:read', 'read', async (p) => core.previewTaskArtifacts ? core.previewTaskArtifacts(p.id) : { files: [] });
 
@@ -108,9 +108,12 @@ tool('resume_automatic_sync_plan', '恢复自动同步计划', { id: str('计划
 tool('run_automatic_sync_plan', '立即触发自动同步计划（按计划创作者各建 sync 任务）', { id: str('计划 id', true), concurrency: num('并发，默认 5'), token: str() }, 'mcp:write', 'write', async (p) => {
   const plan = core.getAutoSyncPlan(p.id);
   if (!plan) return { error: '计划不存在' };
-  await core.triggerAutoSyncPlan(plan, core.CONFIG.dataRoot || '', { concurrency: p.concurrency || 5 });
-  return { id: p.id, triggered: true, note: '已为计划内创作者创建 sync 任务' };
+  // triggerAutoSyncPlan 期望 creators 为 'service:creator_id' 字符串数组（split(':') 解析）——getAutoSyncPlan 返回对象数组，此处转换
+  const strCreators = (plan.creators || []).map(c => (typeof c === 'string' ? c : `${c.service}:${c.creator_id}`));
+  await core.triggerAutoSyncPlan({ ...plan, creators: strCreators }, core.CONFIG.dataRoot || process.env.PAWCHIVE_DATA_ROOT || '', { concurrency: p.concurrency || 5 });
+  return { id: p.id, triggered: true, note: `已为 ${strCreators.length} 个创作者创建 sync 任务` };
 });
+tool('delete_automatic_sync_plan', '删除自动同步计划', { id: str('计划 id', true), token: str() }, 'mcp:write', 'destructive', async (p) => { core.deleteAutoSyncPlan(p.id); return { id: p.id, deleted: true }; });
 tool('list_automatic_sync_runs', '列出自动同步计划执行记录（应用层简化：返回计划状态快照）', { token: str() }, 'mcp:read', 'read', async () => core.listAutoSyncPlans());
 
 // ---- 查询/配置 ----

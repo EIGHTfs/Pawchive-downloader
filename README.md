@@ -246,6 +246,18 @@ node mcp-server.js   # stdio MCP 协议（无参数）
 
 > 架构定位：MCP server 与 WebUI 兼容层（server.js+adapter）并行，均复用 core.js，互不冲突——前端交互走 HTTP、AI 调用走 stdio MCP。
 
+### 实测结果（2026-10-01，32 工具全过）
+
+| 组 | 实测 |
+|---|---|
+| 任务 | list_tasks / get_task / task_attempts / task_events / create_task / update_task / pause / stop / resume / rerun / delete / cleanup_preview ✅（建→查→控→重跑→删全链路） |
+| 创作者 | list_creators **7 条真实作者** / search_creators（name=ViciNeko 1 条、service=patreon 100 条）/ add / update / delete ✅ |
+| auto-sync | 计划 create/get/update/pause/resume/run（触发建 sync 任务）/delete ✅ |
+| 查询配置 | get_naming（真实 dataRoot）/ config_schema / search_works（拉作者作品列表）/ post_details / get_pawchive_version ✅ |
+| blockers | list_blockers → []、replace_blockers → 空对齐提示 ✅（无屏蔽业务） |
+
+实测发现并修复 3 处：①list/search_creators 需传 DATA_ROOT（core 函数签名 require targetPath）②run_automatic_sync_plan 的 creators 需转 `service:creator_id` 字符串（trigger 按 split(':') 解析）③rerun_task 清错列名 error/failure_json（tasks 表列名，非 failure）。全部工具实测通过后清理测试数据，不污染真实 DB。
+
 ## 验证状态
 
 - [x] API 实测：创作列表/详情/档案/links/分页（`o` 参数）免登录 JSON
