@@ -47,8 +47,14 @@ cli.js                                ← 独立下载引擎（零依赖 npm 包
 ## 用法
 
 ```bash
-node cli.js <url> [path] [--dryrun] [--offset N] [--length N] [--concurrency N] [--index <索引文件>]
+node cli.js <url|地址文件|逗号多地址|相对地址> [path] [--dryrun] [--offset N] [--length N] [--concurrency N] [--index <索引文件>]
 ```
+
+**地址参数支持四种**（多地址**串行**执行——反爬安全）：
+- **单个 URL**：`node cli.js "https://pawchive.pw/patreon/user/96944064" [path]`
+- **逗号多地址**：`node cli.js "URL1,URL2,URL3" [path]`
+- **文本文件**（每行一个地址，`#` 注释/空行跳过）：`node cli.js /path/to/addresses.txt [path]`
+- **相对地址**（webBase 自动拼接——`fanbox/user/id`、`patreon/user/id` 等）：`node cli.js "fanbox/user/107514250" [path]`
 
 | 参数 | 说明 |
 |------|------|
@@ -278,6 +284,7 @@ node mcp-server.js   # stdio MCP 协议（无参数）
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.0.2 | 2026-10-02 | **多地址 + 文本文件 + 相对地址 + 快速跳过默认开**：地址参数支持逗号分割（`"URL1,URL2"`）/ 文本文件（每行一个地址，`#` 注释/空行跳过）/ 相对地址（`fanbox/user/id`——webBase 自动拼接）；多地址**串行**执行（反爬安全）；`PAWCHIVE_FAST_SKIP` 默认开启（显式 `0` 关——已完整帖零网络本地刷新 html）；同批审计拆分批次（adapter/core/cli 高复杂度函数抽取——行为不变） |
 | v1.0.1 | 2026-10-01 | **进度条升级**：独立模块 `progress.js` 多行渲染（每个下载任务一行 + 底部汇总行，ANSI 上移重绘不互相覆盖）；`--progress <style>` 参数 / env `PAWCHIVE_PROGRESS` 指定样式——`single` 单行汇总 / `multi` 多行每任务一行（默认）/ `ipull` 模仿 ipull fancy（状态图标 ↓下载/→复用 + 名称/大小/百分比/bar/速度列对齐）；同批修复：跨进程锁死锁检测（process.kill 跨平台）、拿不到锁等待重查不误报、网盘日志关键部分（idTail） |
 | v1.0.0 | 2026-10-01 | **MCP server（供 AI 使用）**：新增 `mcp-server.js`——stdio 传输、零依赖手写 MCP JSON-RPC（initialize/tools/list/tools/call），复用 core.js 业务能力暴露 **32 个 MCP 工具**（任务全套 12 / 创作者 5 / auto-sync 8 / 查询配置 5 / blockers 2）；v1 无鉴权 + env `PAWCHIVE_MCP_TOKEN` 可选 Bearer；DSH 等 MCP 客户端 stdio 拉起即可用（第三个协议面——引擎 cli / 业务 core / 协议 adapter+MCP server） |
 | v0.9.0 | 2026-09-30 | 审计提分批次：真魔数提取（CONFIG fetchTimeoutMs/netdiskKeepMinBytes/probeWindowMs + MAGIC 常量）、单字母变量全量重命名（cli/core/adapter/server/scripts 约 50 处）、高复杂度函数抽公共（downloadNetdiskFiles/downloadCreatorAvatars/buildHashIndex 拆子函数）、empty-catch 补语义注释、进度条独立模块 progress.js、审查缺陷修复（downloadRevision abortCtl/跨进程锁/缓存键） |

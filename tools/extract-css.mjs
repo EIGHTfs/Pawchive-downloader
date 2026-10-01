@@ -31,16 +31,18 @@ for (const f of files) {
   const merged = styles.join("\n");
   const hash = crypto.createHash("sha1").update(merged).digest("hex").slice(0, 8);
   if (!appCss) { appCss = merged; appHash = hash; }
-  else if (hash !== appHash) { console.log(`  ⚠ ${f}: style 与首页不同（hash ${hash}）——独立存放`); fs.writeFileSync(path.join(DIR, `app-${hash}.css`), merged); }
+  else if (hash !== appHash) { console.log(`  ⚠ ${f}: style 与首页不同（hash ${hash}）——独立存放`); fs.mkdirSync(DIR, { recursive: true }); fs.writeFileSync(path.join(DIR, `app-${hash}.css`), merged); }
   // 页面改外链：删 <style> 块 → 插入 <link>
   const stripped = html.replace(/<style(?:\s[^>]*)?>[\s\S]*?<\/style\s*>/gi, "");
   const withLink = stripped.includes("</head>")
     ? stripped.replace("</head>", `<link rel="stylesheet" href="/prerender/app.css">\n</head>`)
     : `<link rel="stylesheet" href="/prerender/app.css">\n` + stripped;
+  fs.mkdirSync(path.dirname(p), { recursive: true }); // 目标页面目录防缺失
   fs.writeFileSync(p, withLink);
   console.log(`  ${f}: style ${styles.length} 块 → 外链 app.css（${(html.length - withLink.length) / 1024 | 0}KB 瘦身）`);
 }
 if (appCss) {
+  fs.mkdirSync(DIR, { recursive: true }); // DIR 输出目录防缺失
   fs.writeFileSync(path.join(DIR, "app.css"), appCss);
   console.log(`\n已生成 ${path.join(DIR, "app.css")}（${(appCss.length / 1024) | 0}KB，hash ${appHash}）`);
 }

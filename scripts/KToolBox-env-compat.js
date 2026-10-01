@@ -138,6 +138,7 @@ function writeEnv(key, value, envPath = DEFAULT_ENV_PATH) {
   const line = `${key}=${value}`;
   if (new RegExp(`^${key}=.*$`, 'm').test(text)) text = text.replace(new RegExp(`^${key}=.*$`, 'm'), line);
   else text += (text.endsWith('\n') || text === '' ? '' : '\n') + line + '\n';
+  fs.mkdirSync(path.dirname(envPath), { recursive: true }); // envPath 父目录可自定义缺失——防 ENOENT
   fs.writeFileSync(envPath, text, 'utf8');
 }
 
@@ -151,7 +152,7 @@ if (require.main === module) {
     const outFile = process.argv[genIdx + 1] && !process.argv[genIdx + 1].startsWith('-') ? process.argv[genIdx + 1] : null;
     const lines = Object.entries(buildMapped()).map(([k, v]) => `${k}=${v}`);
     const out = lines.join('\n') + (lines.length ? '\n' : '');
-    if (outFile) { fs.writeFileSync(outFile, out); console.log(`✓ 已导出映射到 ${outFile}（${lines.length} 项）；之后直接 node cli.js 使用`); }
+    if (outFile) { fs.mkdirSync(path.dirname(outFile), { recursive: true }); fs.writeFileSync(outFile, out); console.log(`✓ 已导出映射到 ${outFile}（${lines.length} 项）；之后直接 node cli.js 使用`); }
     else { process.stdout.write(out); }
     process.exit(0);
   }

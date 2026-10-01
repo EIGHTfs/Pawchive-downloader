@@ -47,6 +47,7 @@ function readPostObj(htmlPath) {
         const beforeNd = (origObj.files || []).filter(f => /^https?:/i.test(f.serverPath || '')).length;
         assert('1. 正文网盘重建: html 已重写且网盘项记录（0 → 1，rel 指向本地文件）', nd.length === beforeNd + 1 && nd.length === 1 && !!nd[0].rel, nd[0] && nd[0].rel);
       } finally {
+        fs.mkdirSync(path.dirname(xHtml), { recursive: true }); // 恢复写回——防目标目录缺失 ENOENT
         fs.writeFileSync(xHtml, original); // 恢复原文——不污染真实数据
       }
       assert('1. 正文网盘重建: 测试后 html 已恢复原文', fs.readFileSync(xHtml, 'utf8') === original);

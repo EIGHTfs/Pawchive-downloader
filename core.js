@@ -281,33 +281,39 @@ function deleteCreatorProfile(service, creator_id) {
   db.prepare('UPDATE creators_profile SET removed = 1 WHERE service=? AND creator_id=?').run(service, creator_id); // 软删（removed 标记——列表排除——下载目录保留可恢复）
 }
 /** 索引列表合并编辑记录（alias 显示名 + enabled） */
+/** 解析单个创作者目录的 pawchive-index.html → 列表项；无效/软删/异常返回 null */
+function parseCreatorEntry(targetPath, ent) {
+  const idx = path.join(targetPath, ent.name, cli.CONFIG.indexFilename);
+  if (!fs.existsSync(idx)) return null;
+  try {
+    const html = fs.readFileSync(idx, 'utf8');
+    const idxMatch = html.match(/<script id="pawchive-index"[^>]*>([\s\S]*?)<\/script>/);
+    if (!idxMatch) return null;
+    const obj = JSON.parse(idxMatch[1]);
+    if (!obj || obj.type !== 'creator') return null;
+    if (/\[object /.test(String(obj.service || '')) || /\[object /.test(String(obj.userId || ''))) return null; // 异常标识（object 字符串化）——跳过不进列表（前端无法移除的条目）
+    const avatars = (obj.avatars || []).filter(a => a.exists);
+    const profile = getCreatorProfile(obj.service || '', obj.userId || '');
+    if (profile && profile.removed) return null; // 软删作者（已移除）——列表排除（下载目录保留——不误删数据）
+    let avatar = null;
+    if (avatars[0]) { const avatarFile = path.join(targetPath, ent.name, avatars[0].rel); if (fs.existsSync(avatarFile)) avatar = avatars[0].rel; } // avatar_url 仅当文件真实存在（防 404 图）
+    return {
+      service: obj.service || '', creator_id: obj.userId || '', name: profile && profile.alias ? profile.alias : (obj.creatorName || ent.name),
+      dir: ent.name, postCount: obj.postCount || 0,
+      enabled: profile ? profile.enabled : true,
+      avatar,
+    };
+  } catch { /* 解析失败跳过 */ return null; }
+}
+
 function listCreators(targetPath) {
   const out = [];
   let entries;
   try { entries = fs.readdirSync(targetPath, { withFileTypes: true }); } catch { return out; }
   for (const ent of entries) {
     if (!ent.isDirectory() || ent.name.startsWith('.')) continue;
-    const idx = path.join(targetPath, ent.name, cli.CONFIG.indexFilename);
-    if (!fs.existsSync(idx)) continue;
-    try {
-      const html = fs.readFileSync(idx, 'utf8');
-      const idxMatch = html.match(/<script id="pawchive-index"[^>]*>([\s\S]*?)<\/script>/);
-      if (!idxMatch) continue;
-      const obj = JSON.parse(idxMatch[1]);
-      if (!obj || obj.type !== 'creator') continue;
-      if (/\[object /.test(String(obj.service || '')) || /\[object /.test(String(obj.userId || ''))) continue; // 异常标识（object 字符串化）——跳过不进列表（前端无法移除的条目）
-      const avatars = (obj.avatars || []).filter(a => a.exists);
-      const profile = getCreatorProfile(obj.service || '', obj.userId || '');
-      if (profile && profile.removed) continue; // 软删作者（已移除）——列表排除（下载目录保留——不误删数据）
-      let avatar = null;
-      if (avatars[0]) { const avatarFile = path.join(targetPath, ent.name, avatars[0].rel); if (fs.existsSync(avatarFile)) avatar = avatars[0].rel; } // avatar_url 仅当文件真实存在（防 404 图）
-      out.push({
-        service: obj.service || '', creator_id: obj.userId || '', name: profile && profile.alias ? profile.alias : (obj.creatorName || ent.name),
-        dir: ent.name, postCount: obj.postCount || 0,
-        enabled: profile ? profile.enabled : true,
-        avatar,
-      });
-    } catch { /* 解析失败跳过 */ }
+    const item = parseCreatorEntry(targetPath, ent);
+    if (item) out.push(item);
   }
   return out;
 }
@@ -359,6 +365,27 @@ function progressReducer() {
     p.speed_bps = speedHistory.length ? speedHistory.reduce((s, x) => s + x.v, 0) / speedHistory.length : 0; // 5s 均值（平滑——单文件切换不归零）
     p.eta_seconds = (typeof p.total_bytes === 'number' && p.speed_bps > 0) ? Math.max(0, (p.total_bytes - p.transferred_bytes) / p.speed_bps) : null;
   };
+  // ---- 各事件类型独立处理（共享闭包状态——按事件分函数降复杂度）----
+  const applyJobProgress = (data) => {
+    const fn = data.filename || '';
+    if (typeof data.size === 'number') { p.transferred_bytes += Math.max(0, data.size - (lastSizes[fn] || 0)); lastSizes[fn] = data.size; } // 增量累计（非 Math.max 单值）
+    if (typeof data.totalSize === 'number') { jobTotals[fn] = data.totalSize; p.total_bytes = Object.values(jobTotals).reduce((s, t) => s + t, 0); } // total 累计和（对齐原版——非 max 单文件）
+    p.active_downloads[fn] = { filename: fn, percent: data.percent, speed: data.speed, size: data.size, totalSize: data.totalSize, creator_key: data.creator || '' };
+    recompute();
+  };
+  const clearFileTrack = (fn) => { delete lastSizes[fn]; delete p.active_downloads[fn]; delete p.waiting_retries[fn]; };
+  const applyJobDone = (data, kind) => {
+    hadJobEvents = true;
+    if (kind === 'downloaded') { p.completed_files++; p.processed_files++; }
+    else if (kind === 'existed') { p.existing_files++; p.processed_files++; }
+    else if (kind === 'failed') p.failed_files++; // 失败不算已处理（2026-09-30 用户语义：已处理=全部-失败）
+    // abort 中断不计 failed（对齐原版 CancelledError）——仅清理
+    const fnDl = data.filename || '';
+    clearFileTrack(fnDl);
+    // 2026-09-30 补漏：无 size 记录（html 记录 size null → job.progress totalSize null → 未计入 jobTotals）的文件下载完成——用实际 size 补进 total
+    if (kind === 'downloaded' && jobTotals[fnDl] == null && typeof data.size === 'number') { jobTotals[fnDl] = data.size; p.total_bytes = Object.values(jobTotals).reduce((s, t) => s + t, 0); }
+    recompute();
+  };
   return {
     // 输出层映射（不改前端）：前端「文件」统计读 processed_files/queued_files 两个字段显示「N / M」。
     // 我们自定义语义（与 KToolBox 原版不同，2026-09-30 用户决策）：已处理 = 全部 - 失败——失败的文件不算已处理（processed 只计成功处理的 completed+existing），
@@ -368,39 +395,21 @@ function progressReducer() {
     apply(ev) {
       const data = ev.data || {};
       switch (ev.type) {
-        case 'job.progress': {
-          const fn = data.filename || '';
-          if (typeof data.size === 'number') { p.transferred_bytes += Math.max(0, data.size - (lastSizes[fn] || 0)); lastSizes[fn] = data.size; } // 增量累计（非 Math.max 单值）
-          if (typeof data.totalSize === 'number') { jobTotals[fn] = data.totalSize; p.total_bytes = Object.values(jobTotals).reduce((s, t) => s + t, 0); } // total 累计和（对齐原版——非 max 单文件）
-          p.active_downloads[fn] = { filename: fn, percent: data.percent, speed: data.speed, size: data.size, totalSize: data.totalSize, creator_key: data.creator || '' };
-          recompute();
-          break;
-        }
+        case 'job.progress': applyJobProgress(data); break;
         case 'job.queued': p.queued_files++; hadJobEvents = true; break; // 文件 job 入队（对齐原版 job_queued——累计入队数）
-        case 'download.retrying': { // P1-4（2026-09-30）：等待重试填充（对齐原版 task_reporter.py:165-194 填 waiting_retries）——job.* 终态 pop
+        case 'download.retrying': // P1-4（2026-09-30）：等待重试填充（对齐原版 task_reporter.py:165-194 填 waiting_retries）——job.* 终态 pop
           p.waiting_retries[data.filename || ''] = { creator_key: data.creator || '', filename: data.filename || '', retry_count: data.retry_count || 0, status_code: data.status_code ?? null };
           break;
-        }
-        case 'creator.started': { // P1-5（2026-09-30）：活动创作者 append（对齐原版 task_reporter.py:70-101 字符串 creator_key）
+        case 'creator.started': // P1-5（2026-09-30）：活动创作者 append（对齐原版 task_reporter.py:70-101 字符串 creator_key）
           if (data.creator && !p.active_creators.includes(data.creator)) p.active_creators.push(data.creator);
           break;
-        }
-        case 'creator.finished': { // 活动创作者 remove（对齐原版 append/remove 配对）
+        case 'creator.finished': // 活动创作者 remove（对齐原版 append/remove 配对）
           if (data.creator) p.active_creators = p.active_creators.filter(c => c !== data.creator);
           break;
-        }
-        case 'job.downloaded': { // 2026-09-30 补漏：无 size 记录（html 记录 size null → job.progress totalSize null → 未计入 jobTotals）的文件下载完成——用实际 size 补进 total，transferred 不再超过 total（原 10.1MiB/9.83MiB 类显示）
-          hadJobEvents = true; p.completed_files++; p.processed_files++;
-          const fnDl = data.filename || '';
-          delete lastSizes[fnDl]; delete p.active_downloads[fnDl]; delete p.waiting_retries[fnDl];
-          if (jobTotals[fnDl] == null && typeof data.size === 'number') { jobTotals[fnDl] = data.size; p.total_bytes = Object.values(jobTotals).reduce((s, t) => s + t, 0); }
-          recompute();
-          break;
-        }
-        case 'job.existed': hadJobEvents = true; p.existing_files++; p.processed_files++; delete lastSizes[data.filename || '']; delete p.active_downloads[data.filename || '']; delete p.waiting_retries[data.filename || '']; recompute(); break;
-        case 'job.aborted': hadJobEvents = true; delete lastSizes[data.filename || '']; delete p.active_downloads[data.filename || '']; delete p.waiting_retries[data.filename || '']; recompute(); break; // abort 中断（不计 failed——对齐原版 CancelledError）
-        case 'job.failed': hadJobEvents = true; p.failed_files++; // 失败不算已处理（2026-09-30 用户语义：已处理 = 全部 - 失败——processed 只计成功处理的文件）
-        delete lastSizes[data.filename || '']; delete p.active_downloads[data.filename || '']; delete p.waiting_retries[data.filename || '']; recompute(); break;
+        case 'job.downloaded': applyJobDone(data, 'downloaded'); break;
+        case 'job.existed': applyJobDone(data, 'existed'); break;
+        case 'job.aborted': applyJobDone(data, 'aborted'); break; // abort 中断（不计 failed——对齐原版 CancelledError）
+        case 'job.failed': applyJobDone(data, 'failed'); break;
         case 'post.completed': // 帖级聚合——仅当该帖无 job.* 事件（全部已存在 todoJobs 空）时兜底累计（cli 带 hasJobs 标记）；有 job 事件则 job.* 已计，不叠加（2026-09-29 修复双计）
           if (!data.hasJobs) {
             p.completed_files += data.downloaded || 0;
@@ -612,11 +621,8 @@ let autoSyncTimer = null;
 const runningTasks = new Set(); // 正在执行的下载任务（全局并发槽位占用）
 let schedulerTimer = null;
 let schedulerMaxActive = 5;
-/** 触发一次调度（创建任务/任务结束/控制操作后调用）：queued→启动（不超过全局上限）、blocked→阻塞源解除后转 queued */
-function scheduleTick() {
-  if (!schedulerTimer) return; // 调度器未启动（纯 CLI 模式无调度——任务仍可被显式 downloadTask 直接执行）
-  const now = Date.now();
-  // blocked → 阻塞源（blocked_by 指向任务）不再 ACTIVE → 转 queued
+/** 调度器：blocked → 阻塞源（blocked_by 指向任务）不再 ACTIVE → 转 queued */
+function unblockReadyTasks() {
   for (const t of listTasks()) {
     if (t.status !== 'blocked' || !t.blocked_by) continue;
     const blocker = getTask(t.blocked_by);
@@ -625,7 +631,11 @@ function scheduleTick() {
       eventStore.publish({ event_type: 'task.status', task_id: t.id, data: { status: 'queued', progress: JSON.parse((getTask(t.id) || {}).progress_json || '{}') } });
     }
   }
-  // queued → 启动（全局并发上限内；防重复启动；2026-09-29 补：启动前再次检查同作者资源冲突——rerun/run 转 queued 也遵守 blocked 语义）
+}
+
+/** 调度器：queued → 启动（全局并发上限内；防重复启动；同作者资源冲突 → blocked；缺 output/URL → failed） */
+function launchQueuedTasks() {
+  const now = Date.now();
   for (const t of listTasks()) {
     if (t.status !== 'queued' || runningTasks.has(t.id)) continue;
     const spec = t.spec || {};
@@ -649,6 +659,13 @@ function scheduleTick() {
       .catch(err => console.error(`[scheduler ${t.id}] 执行异常: ${err && err.message || err}`));
     void now;
   }
+}
+
+/** 触发一次调度（创建任务/任务结束/控制操作后调用）：queued→启动（不超过全局上限）、blocked→阻塞源解除后转 queued */
+function scheduleTick() {
+  if (!schedulerTimer) return; // 调度器未启动（纯 CLI 模式无调度——任务仍可被显式 downloadTask 直接执行）
+  unblockReadyTasks();
+  launchQueuedTasks();
 }
 /** 启动任务调度器（服务启动调一次）：每分钟扫 queued/blocked → 按全局并发上限启动；maxActive = 全局并发上限（默认 5） */
 function startTaskScheduler(targetPath, { maxActive = 5 } = {}) {

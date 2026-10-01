@@ -167,6 +167,7 @@ function genPostIndexFromPostJson(postDir, rootDir) {
   for (const a of post.attachments || []) add(a);
   const creatorName = path.basename(path.dirname(postDir)); // 父目录 = 创作者目录名（纯名）
   const html = cli.buildPostIndexHtml(post, creatorName, path.relative(rootDir, postDir), files);
+  fs.mkdirSync(postDir, { recursive: true }); // postDir 由遍历推导（可能含大小写前缀目录）——recursive 防缺失
   fs.writeFileSync(path.join(postDir, indexName), html, 'utf8');
   return files.length;
 }
@@ -280,7 +281,7 @@ function runReverse() {
       title: obj.title || '', content: contentText, published: obj.published || null,
     };
     planLines.push(`  [生成] ${path.relative(root, path.join(postDir, 'post.json'))}`);
-    if (!flags.dryrun) fs.writeFileSync(path.join(postDir, 'post.json'), JSON.stringify(postJson, null, 2) + '\n', 'utf8');
+    if (!flags.dryrun) { fs.mkdirSync(postDir, { recursive: true }); fs.writeFileSync(path.join(postDir, 'post.json'), JSON.stringify(postJson, null, 2) + '\n', 'utf8'); }
     // 2) 正文文件（KToolBox 命名从 toml）
     if (contentText && !fs.existsSync(path.join(postDir, contentName))) {
       planLines.push(`  [生成] ${path.relative(root, path.join(postDir, contentName))}`);
