@@ -22,7 +22,7 @@ const { chromium } = await import('file://' + PW_PATH);
 const BASE = (process.argv[2] || 'http://127.0.0.1:8791').replace(/\/$/, '');
 const USER = process.argv[3] || 'admin';
 const PASS = process.argv[4] || 'admin123';
-const FONTCONF = process.env.FONTCONFIG_FILE || '/volume1/VirtualDSM/DeepSeekHarness/fonts/fonts.conf';
+const FONTCONF = process.env.FONTCONFIG_FILE || new URL('../../../fonts/fonts.conf', import.meta.url).pathname; // 相对本文件目录定位（../../../ = DeepSeekHarness 根）
 
 // 七路由（避开无头崩溃页 creators/configuration）
 // 路由集（argv[5] 逗号分隔可覆盖；默认避开 creators——无头已知崩溃页）

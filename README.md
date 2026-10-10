@@ -69,8 +69,8 @@ node cli.js <url|地址文件|逗号多地址|相对地址> [path] [--dryrun] [-
 ### 示例 1：单帖下载（先模拟再真实）
 
 ```bash
-node cli.js "https://pawchive.pw/patreon/user/96944064/post/166151636" "/volume1/VirtualDSM/(Pawchive)/Pawchive" --dryrun
-node cli.js "https://pawchive.pw/patreon/user/96944064/post/166151636" "/volume1/VirtualDSM/(Pawchive)/Pawchive"
+node cli.js "https://pawchive.pw/patreon/user/96944064/post/166151636" "~/Pawchive-downloads" --dryrun
+node cli.js "https://pawchive.pw/patreon/user/96944064/post/166151636" "~/Pawchive-downloads"
 ```
 
 单帖同样落到 `<创作者名>/<帖子标题>/` 结构（实测 `RenKamui/[Genshin] Nicole_ Standard Nude Mod/`），与全量下载共享 hash 去重。
@@ -78,8 +78,8 @@ node cli.js "https://pawchive.pw/patreon/user/96944064/post/166151636" "/volume1
 ### 示例 2：创作者全量同步（先模拟再真实）
 
 ```bash
-node cli.js "https://pawchive.pw/patreon/user/96944064" "/volume1/VirtualDSM/(Pawchive)/Pawchive" --dryrun
-node cli.js "https://pawchive.pw/patreon/user/96944064" "/volume1/VirtualDSM/(Pawchive)/Pawchive"
+node cli.js "https://pawchive.pw/patreon/user/96944064" "~/Pawchive-downloads" --dryrun
+node cli.js "https://pawchive.pw/patreon/user/96944064" "~/Pawchive-downloads"
 ```
 
 ### 示例 3：省略 path（读 .env 的 PAWCHIVE_DATA_ROOT）+ 相对路径
@@ -89,7 +89,7 @@ node cli.js "patreon/user/96944064" --dryrun    # path 从 .env 读，URL 自动
 node cli.js "patreon/user/96944064"             # 真实下载
 ```
 
-> `.env` 需配置 `PAWCHIVE_DATA_ROOT=/volume1/VirtualDSM/(Pawchive)/Pawchive`（webui 默认输出同源）。
+> `.env` 需配置 `PAWCHIVE_DATA_ROOT=~/Pawchive-downloads`（webui 默认输出同源）。
 
 ## 落盘结构
 

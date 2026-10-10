@@ -1,7 +1,7 @@
 {
   "meta": {
     "generator": "tools/extract-ktool-apis.py",
-    "source_repo": "/volume1/@appdata/DeepSeekHarness-NAS/0.1.6-alpha.1/工作区/Pawchive-downloader/.probe-ktoolbox",
+    "source_repo": ".probe-ktoolbox",
     "extracted_at": "2026-09-28T01:38:21Z",
     "python_version": "3.8.15"
   },

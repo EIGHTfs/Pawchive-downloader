@@ -12,8 +12,8 @@
  * 用法：
  *   node clean-bot.js <path> [--dryrun] [--trash <回收目录>]
  *   例：
- *     node clean-bot.js "/volume1/VirtualDSM/(Pawchive)/Pawchive" --dryrun
- *     node clean-bot.js "/volume1/VirtualDSM/(Pawchive)/Pawchive"
+ *     node clean-bot.js "<数据根>" --dryrun
+ *     node clean-bot.js "<数据根>"
  */
 
 'use strict';

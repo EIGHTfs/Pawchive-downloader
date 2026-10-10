@@ -38,7 +38,7 @@ const NAV = [
 ];
 
 // 无头 chromium 缺 CJK 字体渲染崩溃（TextRunHarfBuzz）→ 注入现成 FONTCONFIG_FILE（skill: headless-browser-screenshot）
-const FONTCONF = process.env.FONTCONFIG_FILE || '/volume1/VirtualDSM/DeepSeekHarness/fonts/fonts.conf';
+const FONTCONF = process.env.FONTCONFIG_FILE || new URL('../../../fonts/fonts.conf', import.meta.url).pathname; // 相对本文件目录定位（../../../ = DeepSeekHarness 根）
 const browser = await chromium.launch({
   executablePath: CHROME,
   args: ['--no-sandbox', '--disable-gpu', '--disable-crash-reporter'],

@@ -12,8 +12,8 @@
  *   --offset N       从第 N 个帖子开始（配合 --length 分批）
  *   --concurrency N  并发下载数（默认 1 串行，受 TPS 限速约束），如 --concurrency 3
  *   --index <文件>   直接读已有索引文件（.pawchive/*.index.json）生成计划下载，0 API 请求
- *   例：node cli.js https://pawchive.pw/patreon/user/96944064 "/volume1/VirtualDSM/(Pawchive)/Pawchive" --dryrun
- *   例：node cli.js https://pawchive.pw/patreon/user/96944064 "/volume1/VirtualDSM/(Pawchive)/Pawchive" --length 10
+ *   例：node cli.js https://pawchive.pw/patreon/user/96944064 "~/Pawchive-downloads" --dryrun
+ *   例：node cli.js https://pawchive.pw/patreon/user/96944064 "~/Pawchive-downloads" --length 10
  *   真实下载显示实时进度条（终端 TTY）：整体 N/M 文件数 + 百分比 + 总速度 + 当前文件进度/速度；
  *   非终端（管道/日志重定向）自动降级为逐行状态输出（同 gbmd/iwara/KToolBox 的 plain 模式）。
  *   索引：每次分页拉取都原子落盘到 <path>/.pawchive/<service>-<userId>.index.json，

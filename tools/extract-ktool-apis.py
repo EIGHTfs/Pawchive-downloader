@@ -495,9 +495,14 @@ def main():
     webui_routes.sort(key=lambda r: (r["path"] or "", r["method"]))
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # source_repo 记相对路径（相对仓库根；仓库外路径只记目录名）——不写死机器绝对路径
+    try:
+        source_repo_rel = str(repo_root.relative_to(script_dir.parent))
+    except ValueError:
+        source_repo_rel = repo_root.name
     meta = {
         "generator": "tools/extract-ktool-apis.py",
-        "source_repo": str(repo_root),
+        "source_repo": source_repo_rel,
         "extracted_at": now,
         "python_version": sys.version.split()[0],
     }

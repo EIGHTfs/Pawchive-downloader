@@ -68,7 +68,8 @@ function waitListen(retries = 30) {
 async function main() {
   console.log(`[test] 启动兼容层测试服务（端口 ${PORT}，DB 内存临时）`);
   const server = spawn(process.execPath, [path.join(ROOT, 'server.js')], {
-    env: { ...process.env, PAWCHIVE_WEB_PORT: String(PORT), PAWCHIVE_WEB_DB: `:memory:`, PAWCHIVE_DATA_ROOT: process.env.PAWCHIVE_DATA_ROOT || '/volume1/VirtualDSM/(Pawchive)/Pawchive' },
+    // 数据根走 env/.env（PAWCHIVE_DATA_ROOT）——不写死机器路径；server.js 自身读 .env
+    env: { ...process.env, PAWCHIVE_WEB_PORT: String(PORT), PAWCHIVE_WEB_DB: `:memory:` },
     stdio: 'ignore',
   });
   try {

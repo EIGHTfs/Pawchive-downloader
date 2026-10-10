@@ -17,9 +17,9 @@
  * 用法：
  *   node migrate.js <path> [--dryrun] [--trash <回收目录>] [--target <子路径>]
  *   例（先模拟，再执行；--target 只处理指定子目录）：
- *     node migrate.js "/volume1/VirtualDSM/(Pawchive)/Pawchive" --dryrun
- *     node migrate.js "/volume1/VirtualDSM/(Pawchive)/Pawchive" --target "Akt/2021 Eula EX" --dryrun
- *     node migrate.js "/volume1/VirtualDSM/(Pawchive)/Pawchive" --target "Akt/2021 Eula EX"
+ *     node migrate.js "<数据根>" --dryrun
+ *     node migrate.js "<数据根>" --target "Akt/2021 Eula EX" --dryrun
+ *     node migrate.js "<数据根>" --target "Akt/2021 Eula EX"
  */
 
 'use strict';

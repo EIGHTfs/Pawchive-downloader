@@ -11,7 +11,8 @@ const path = require('path');
 const fs = require('fs');
 const cli = require('../cli.js');
 
-const DATA_ROOT = process.env.PAWDATA_ROOT || '/volume1/VirtualDSM/(Pawchive)/Pawchive';
+const DATA_ROOT = process.env.PAWCHIVE_DATA_ROOT || ''; // 数据根由 env/.env 提供（不写死机器路径；此前误用 PAWDATA_ROOT 导致覆盖失效）
+if (!DATA_ROOT) { console.error('[benchmark] 需要 PAWCHIVE_DATA_ROOT（环境变量或 .env）指向数据根'); process.exit(2); }
 const verbose = process.argv.includes('--verbose');
 const results = [];
 

@@ -19,7 +19,7 @@ const DELAY = Number(process.argv[3] || 8000);
 const TARGET = process.argv[4] || '/api/v1/creators';
 const NAV_PATH = process.argv[5] || '/blockers'; // 延迟注入后切换到的页面路由
 const MODE = process.argv[6] || 'click'; // click=SPA 点击切换 | goto=整页直达（冷查询）
-const FONTCONF = process.env.FONTCONFIG_FILE || '/volume1/VirtualDSM/DeepSeekHarness/fonts/fonts.conf';
+const FONTCONF = process.env.FONTCONFIG_FILE || new URL('../../../fonts/fonts.conf', import.meta.url).pathname; // 相对本文件目录定位（../../../ = DeepSeekHarness 根）
 
 const browser = await chromium.launch({
   executablePath: CHROME,
