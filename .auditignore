@@ -2,3 +2,5 @@
 # 说明：以下文件经人工评审，误报项集中在此豁免，避免行内注释散落；其余文件正常审计
 #   - adapters/KToolBox-webui.js：session 放行标记 dev-noauth（no-hardcoded-credentials 误报——非真实凭据）+ handleTaskListOrCreate 圈复杂度 55（审计拆分批次遗留——待后续再拆）
 adapters/KToolBox-webui.js
+# 第三方部署物料（上游 MEGA 中转 Worker 源码，不按本项目代码规范要求）
+tools/mega-worker/worker.js

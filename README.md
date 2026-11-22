@@ -151,7 +151,8 @@ Pawchive 文件路径是 SHA-256 内容寻址（`/<2位>/<3位>/<64位hash>.<ext
 - **同名文件后缀**：同帖内同名不同内容（不同 hash）的文件自动加后缀区分（如 `image-1_4535755.png`，后缀模板由 `PAWCHIVE_FILENAME_SUFFIX_FORMAT` 配置，`{size}`=文件大小，无大小退序号），防互相覆盖
 - **缩略图回退**：原图 404（源站失效链接）时自动回退下载 `img.pawchive.pw/thumbnail/` 缩略图（文件名加 `_thumb` 标记，如 `image-1_thumb.webp`），原图恢复后重跑自动换回原图并清理旧缩略图
 - **外链表格**：帖子级 html 正文里的外部链接（http/https，一般是网盘下载地址）自动统计成表格（# / 链接 / 域名）
-- **网盘下载**：正文里的 Google Drive / Dropbox 链接自动下载（**provider 注册表可扩展**：mega/baidu 等加一个 provider 即可）——下载后记录进帖 html（文件列表 + 机读块），**内容 sha256 跨帖去重复用**（硬链接）；**正文里的网盘链接 a 标签本地化**（指向本地文件），外链表格保持原始 URL；**大文件病毒扫描确认页自动处理**（识别后带 confirm 重下）；**支持断点续传**（.tmp + Range 续传，确认页残留自动清理）
+- **网盘下载**：正文里的 Google Drive / Dropbox / MEGA 链接自动下载（**provider 注册表可扩展**：baidu 等加一个 provider 即可）——下载后记录进帖 html（文件列表 + 机读块），**内容 sha256 跨帖去重复用**（硬链接）；**正文里的网盘链接 a 标签本地化**（指向本地文件），外链表格保持原始 URL；**大文件病毒扫描确认页自动处理**（识别后带 confirm 重下）；**支持断点续传**（.tmp + Range 续传，确认页残留自动清理）
+- **MEGA 两级发现 + 中转下载**：不少作者的 `.txt` 附件内容就是 MEGA 链接清单（正文里没有这些链接）——文件下完后自动扫帖内小 `.txt`、提取链接并作为二级任务下载（`PAWCHIVE_MEGA_FROM_TXT`）。MEGA 走自建 Cloudflare Pages/Worker 中转（`PAWCHIVE_MEGA_WORKER`）：直连 MEGA 虽可连通但实测速率仅约 10KB/s，中转实测约 120–470KB/s；部署与验证步骤见 `tools/mega-pages/README.md`
 - **TPS 限速（反爬）**：默认每秒最多 1 个新连接（`PAWCHIVE_TPS`；file host 明示要求 ≤1 req/s，超速返回 376B 占位）
 - **完整性校验**：下载完成比对落盘大小与响应头（Content-Range/Content-Length）；**376B=反爬占位、404 错误页均删除不落盘**
 - **分页拉取**：每页 50 条（Pawchive 分页参数 `o`，stepping of 50 enforced；页间默认 1s 间隔防连发）
@@ -200,6 +201,9 @@ Pawchive 文件路径是 SHA-256 内容寻址（`/<2位>/<3位>/<64位hash>.<ext
 | `PAWCHIVE_FILES_PREFIX` | `/data` | 文件路径前缀 |
 | `PAWCHIVE_THUMB_BASE` | `https://img.pawchive.pw/thumbnail` | 原图 404 时缩略图回退 base |
 | `PAWCHIVE_DOWNLOAD_DRIVE` | `1` | 下载正文网盘链接（0=关；provider 可扩展） |
+| `PAWCHIVE_MEGA_WORKER` | 空 | MEGA 中转站基址（自建 Cloudflare Pages/Worker；留空=不下载 MEGA，因直连仅约 10KB/s 不可用） |
+| `PAWCHIVE_MEGA_FROM_TXT` | `1` | 扫帖内 `.txt` 触发二级网盘下载（0=关） |
+| `PAWCHIVE_TXT_SCAN_MAX_BYTES` | `8192` | 只把不超过该大小的 `.txt` 当链接清单扫描 |
 | `PAWCHIVE_FAST_SKIP` | `0` | 快速跳过已完整帖（1=开；默认关=全量检查补漏录外链/网盘） |
 | `PAWCHIVE_ANTIBOT_SIZE` | `376` | 反爬占位大小（file host bot 提示字节特征） |
 | `PAWCHIVE_404_PAGE_MAX` | `4096` | 404/错误页判定阈值（小于此大小才读头部判断） |
@@ -285,10 +289,11 @@ node mcp-server.js   # stdio MCP 协议（无参数）
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
-| v1.0.3 | 2026-11-22 | **修复快速跳过崩溃**：创作者批量模式下快速跳过调用本地 html 刷新时，目标目录取自 slim 帖对象的 `relDir`（该字段仅存在于创作者级索引条目），值为 undefined 导致 `path.join` 抛 ERR_INVALID_ARG_TYPE 整轮中断；改为以 `postId → 创作者索引条目` 映射取 `relDir`，并在刷新函数入口对缺失 `relDir` 做防御（返回未完成、回退正常下载）。同批说明：文件 host 拒绝伪装浏览器 UA（403 + 376B 提示页，要求可识别 UA 与联系方式），部署配置的 UA 应改为工具名+联系方式形式 |
-| v1.0.2 | 2026-10-02 | **多地址 + 文本文件 + 相对地址 + 快速跳过默认开**：地址参数支持逗号分割（`"URL1,URL2"`）/ 文本文件（每行一个地址，`#` 注释/空行跳过）/ 相对地址（`fanbox/user/id`——webBase 自动拼接）；多地址**串行**执行（反爬安全）；`PAWCHIVE_FAST_SKIP` 默认开启（显式 `0` 关——已完整帖零网络本地刷新 html）；同批审计拆分批次（adapter/core/cli 高复杂度函数抽取——行为不变） |
-| v1.0.1 | 2026-10-01 | **进度条升级**：独立模块 `progress.js` 多行渲染（每个下载任务一行 + 底部汇总行，ANSI 上移重绘不互相覆盖）；`--progress <style>` 参数 / env `PAWCHIVE_PROGRESS` 指定样式——`single` 单行汇总 / `multi` 多行每任务一行（默认）/ `ipull` 模仿 ipull fancy（状态图标 ↓下载/→复用 + 名称/大小/百分比/bar/速度列对齐）；同批修复：跨进程锁死锁检测（process.kill 跨平台）、拿不到锁等待重查不误报、网盘日志关键部分（idTail） |
-| v1.0.0 | 2026-10-01 | **MCP server（供 AI 使用）**：新增 `mcp-server.js`——stdio 传输、零依赖手写 MCP JSON-RPC（initialize/tools/list/tools/call），复用 core.js 业务能力暴露 **32 个 MCP 工具**（任务全套 12 / 创作者 5 / auto-sync 8 / 查询配置 5 / blockers 2）；v1 无鉴权 + env `PAWCHIVE_MCP_TOKEN` 可选 Bearer；DSH 等 MCP 客户端 stdio 拉起即可用（第三个协议面——引擎 cli / 业务 core / 协议 adapter+MCP server） |
+| v1.0.4 | 2026-11-22 | **MEGA 网盘支持**：`mega` provider 经自建 Cloudflare 中转下载（直连实测速率不可用）；帖内 `.txt` 二级发现；断点续传实测通过。部署与验证见 `tools/mega-pages/` |
+| v1.0.3 | 2026-11-22 | **修复快速跳过崩溃**（快速跳过路径取不到帖子目录导致整轮中断）；默认 UA 改为可识别形式 |
+| v1.0.2 | 2026-10-02 | **多地址 + 文本文件 + 相对地址 + 快速跳过默认开** |
+| v1.0.1 | 2026-10-01 | **进度条升级**：独立 `progress.js` 多行渲染（single/multi/ipull） |
+| v1.0.0 | 2026-10-01 | **MCP server**：`mcp-server.js` 暴露 32 个 MCP 工具（stdio JSON-RPC） |
 | v0.9.0 | 2026-09-30 | 审计提分批次：真魔数提取（CONFIG fetchTimeoutMs/netdiskKeepMinBytes/probeWindowMs + MAGIC 常量）、单字母变量全量重命名（cli/core/adapter/server/scripts 约 50 处）、高复杂度函数抽公共（downloadNetdiskFiles/downloadCreatorAvatars/buildHashIndex 拆子函数）、empty-catch 补语义注释、进度条独立模块 progress.js、审查缺陷修复（downloadRevision abortCtl/跨进程锁/缓存键） |
 | v0.8.0 | 2026-09-30 | 文档整理批次：14 份审计/排查/调查/核对文档合并升级为 `docs/调查审计与行为核对-权威指南.md`（权威现状速查 22 项已修复 + 5 项仍开放 + 历史来源索引可追溯）；新增 3 份设计指南（`行为对齐-设计指南`/`KToolBox-bugfix-PR设计指南`/`KToolBox前端接入-设计指南`）；cli.js 跨进程锁死锁检测增强（锁读 pid → /proc/<pid> 存活判定，进程死立即解锁而非等 24h 过期）；fast-skip-benchmark 措辞清理；docs 旧调查文档移除 |
 | v0.7.0 | 2026-09-30 | CLI 网盘链接重构 + 本地索引刷新（extractContentLinks/matchNetdiskLink/buildNetdiskFileMap 提取复用、refreshPostIndexLocal 无网络本地刷新帖索引）+ fast-skip-benchmark 基准测试 |

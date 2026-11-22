@@ -40,3 +40,9 @@ webui.db-shm
 
 # webui-static bundle 备份目录（同级 webui-static.bak-*——更新 bundle 的快照——不入库）
 webui-static.bak-*/
+# 本次新增：MEGA 中转部署物料与运维工具
+!tools/mega-pages
+!tools/mega-worker
+!tools/cloudflare-pages-deploy.js
+!tools/cloudflare-worker-deploy.js
+!tools/ssh-pass.py

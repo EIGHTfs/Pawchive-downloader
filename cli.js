@@ -100,6 +100,10 @@ const CONFIG = {
   // 附件子目录：env 里空 / "." / "/" 三者等价 = 帖根目录（不建子目录）；设 attachments 等可配
   attachmentsSubdir: ((v) => (v && v !== '.' && v !== '/' ? v : ''))(process.env.PAWCHIVE_ATTACHMENTS_SUBDIR || ''),
   downloadDrive: process.env.PAWCHIVE_DOWNLOAD_DRIVE !== '0', // 下载正文里的 Google Drive 网盘链接（默认开；'0'=关）
+  // MEGA 中转站基址（自建 Cloudflare Pages/Worker；留空=不走中转，退回 IP 直连适配器——直连实测仅 ~10KB/s，基本不可用）
+  megaWorker: (process.env.PAWCHIVE_MEGA_WORKER || '').replace(/\/+$/, ''),
+  megaFromTxt: process.env.PAWCHIVE_MEGA_FROM_TXT !== '0', // 扫描帖内已下载 .txt，把其中的 mega 链接当二级任务下载（默认开；'0'=关）
+  txtScanMaxBytes: Number(process.env.PAWCHIVE_TXT_SCAN_MAX_BYTES) || 8192, // 只把这么小的 .txt 当"链接清单"扫描（避免误读大文本）
   fastSkip: process.env.PAWCHIVE_FAST_SKIP !== '0', // 快速跳过已完整帖（默认开——已完整帖零网络本地刷新 html；显式 '0'=关——全量 getPost 检查补漏录外链/网盘）
   includeRevisions: process.env.PAWCHIVE_INCLUDE_REVISIONS !== '0', // 下载帖子修订版本（默认开——内容 sha256 硬链接去重不占额外空间；'0'=关；参考原版 include_revisions：每修订版下到 帖目录/<revisionsSubdir>/<revision_id>/）
   writeCreatorIndex: true, // 创作者级 pawchive-index.html 写入：强制启用（pawchive-index.html 决定去重/网盘下载功能，不提供关闭）；PAWCHIVE_WRITE_CREATOR_INDEX 仅供上层读取写入状态
@@ -640,8 +644,24 @@ const NETDISK_PROVIDERS = {
     downloadUrl: id => `${id}${id.includes('?') ? '&' : '?'}dl=1`, // 强制下载
     key: id => `dropbox:${id}`,
   },
+  // MEGA：分享链接 → 自建中转站（Cloudflare Pages/Worker，PAWCHIVE_MEGA_WORKER）。
+  // 不走中转而用 IP 直连虽然"能连"（GFW 只拦 TLS SNI 里的 mega.nz 关键词），但实测单连接仅约 10KB/s、4 并发 40KB/s，
+  // 大文件不可用；中转站由 Cloudflare 边缘取文件，实测约 470KB/s。id 用 HANDLE#KEY 便于拼中转路由与去重。
+  mega: {
+    match: /https?:\/\/mega\.(?:nz|io)\/(?:file|embed)\/[A-Za-z0-9_-]+#[A-Za-z0-9_-]+/,
+    extract: u => {
+      const keyMatch = /mega\.(?:nz|io)\/(?:file|embed)\/([A-Za-z0-9_-]+)#([A-Za-z0-9_-]+)/.exec(String(u || ''));
+      return keyMatch ? `${keyMatch[1]}#${keyMatch[2]}` : null;
+    },
+    downloadUrl: id => {
+      if (!CONFIG.megaWorker) return null; // 无中转站：不下载（直连速度不可用），由调用方给出提示
+      const [handle, fileKey] = String(id).split('#');
+      return `${CONFIG.megaWorker}/pf/${handle}/${fileKey}/download`;
+    },
+    share: id => { const [handle, fileKey] = String(id).split('#'); return `https://mega.nz/file/${handle}#${fileKey}`; },
+    key: id => `mega:${id}`,
+  },
   // 未来扩展示例（新增网盘：加一个 provider 即可，其余逻辑通用）：
-  // mega:  { match: /mega\.nz\/file\/[A-Za-z0-9_-]+/, extract: u => u.match(/file\/([A-Za-z0-9_-]+)/)?.[1] || null, downloadUrl: id => `https://mega.nz/api/...`, key: id => `mega:${id}` },
   // baidu: { match: /pan\.baidu\.com\/s\/[A-Za-z0-9_-]+/, extract: ..., downloadUrl: ..., key: id => `baidu:${id}` },
 };
 
@@ -719,7 +739,12 @@ async function netdiskDownloadOnce(url, netdiskTmp) {
 /** 网盘下载收尾：HTML 校验通过后落盘/已存在登记，返回记录项；失败返回 null */
 async function netdiskFinalize(urlKey, type, id, postDir, hashIndex, out, { size, tmpPath, result }) {
   const fallbackName = (t, i) => { const segMatch = /[^/?#]+(?=\?|$)/.exec(String(i).split('#')[0]); return segMatch ? `${t}_${segMatch[0]}` : `${t}_${i}`; }; // fallback 取 URL 末段文件名（如 dropbox 链接的 Miku_Study...mp4），避免整 URL 作文件名
-  const name = sanitizeName(result.disposition || fallbackName(type, id)); // 响应头原始文件名，失败退 <type>_<URL末段>
+  // 响应头文件名可能是 URL 编码（MEGA 中转站用 encodeURIComponent 编码真实文件名）→ 先解码再消毒
+  const rawDisposition = (() => {
+    if (!result.disposition) return '';
+    try { return decodeURIComponent(result.disposition); } catch { return result.disposition; }
+  })();
+  const name = sanitizeName(rawDisposition || fallbackName(type, id)); // 响应头原始文件名，失败退 <type>_<URL末段>
   const final = path.join(postDir, name);
   if (await fileExists(final)) { // 本目录已下载（存在即跳过）
     await fs.promises.rm(tmpPath, { force: true }).catch(() => { /* 清理类失败 best-effort 忽略（防主流程中断） */ });
@@ -739,6 +764,27 @@ async function netdiskFinalize(urlKey, type, id, postDir, hashIndex, out, { size
   return out;
 }
 
+/** 下载单个网盘文件（复用判断 → 取直链 → 下载 → 落盘登记）。正文链接与「帖内 txt 里的链接」两条入口共用。 */
+async function downloadSingleNetdiskLink(type, provider, id, postDir, hashIndex, out) {
+  const urlKey = provider.share ? provider.share(id) : id; // 记录/复用统一键 = 完整网盘 URL
+  if (await netdiskReuseExisting(urlKey, type, id, postDir, hashIndex, out)) return;
+  const url = provider.downloadUrl(id);
+  if (!url) { // 该 provider 需要额外前提（如 MEGA 需要中转站基址）而未满足：跳过并明确提示，不静默失败
+    console.log(`  [网盘跳过] ${type}:${idTail(id)}（缺少必要配置，见 PAWCHIVE_MEGA_WORKER；直连速度实测不可用）`);
+    log(`[下载] 网盘跳过 ${type}:${idTail(id)}（缺少必要配置）`);
+    return;
+  }
+  const netdiskTmp = path.join(postDir, sanitizeName(`netdisk_${type}_${id}`) + CONFIG.tempSuffix); // 以完整 URL 作 id 时 tmp 名必须消毒（否则 // 被当路径分隔）
+  const dl = await netdiskDownloadOnce(url, netdiskTmp);
+  if (dl.status !== 'ok') {
+    console.log(`  [网盘失败] ${type}:${idTail(id)}（${dl.status === 'html_page' ? '响应为 HTML 页，非文件' : dl.status}）`);
+    log(`[下载] 网盘 ${type}:${idTail(id)} 失败（${dl.status === 'html_page' ? '响应为 HTML 页' : dl.status}）`);
+    await fs.promises.rm(dl.tmpPath, { force: true }).catch(() => { /* 清理类失败 best-effort 忽略（防主流程中断） */ });
+    return;
+  }
+  await netdiskFinalize(urlKey, type, id, postDir, hashIndex, out, dl);
+}
+
 /** 下载正文里的网盘链接（遍历已注册 provider）到帖子目录；文件名取响应头原始名。
  * 返回记录项 [{filename, size, exists, serverPath(网盘=完整网址), rel, savePath}]——并入帖 html files[] 展示。 */
 async function downloadNetdiskFiles(detail, postDir, hashIndex) {
@@ -747,20 +793,37 @@ async function downloadNetdiskFiles(detail, postDir, hashIndex) {
   const content = detail.content || '';
   for (const [type, p] of Object.entries(NETDISK_PROVIDERS)) {
     const ids = [...new Set((content.match(p.match) || []).map(u => p.extract(u)).filter(Boolean))];
-    for (const id of ids) {
-      // 跨帖复用：hashIndex 里该网盘 ID 已下载（同链接/同内容）→ 硬链接/复制复用，不重复下载
-      const urlKey = p.share ? p.share(id) : id; // 记录/复用统一键 = 完整网盘 URL（drive 构造分享 URL、dropbox 即规范 URL；http/https 前缀天然标识网盘）
-      if (await netdiskReuseExisting(urlKey, type, id, postDir, hashIndex, out)) continue;
-      const url = p.downloadUrl(id);
-      const netdiskTmp = path.join(postDir, sanitizeName(`netdisk_${type}_${id}`) + CONFIG.tempSuffix); // dropbox 等以完整 URL 作 id：tmp 名必须消毒（否则 https:// 的 // 被当路径分隔 → 创建 netdisk_dropbox_https: 目录树）
-      const dl = await netdiskDownloadOnce(url, netdiskTmp);
-      if (dl.status !== 'ok') {
-        console.log(`  [网盘失败] ${type}:${id}（${dl.status === 'html_page' ? '响应为 HTML 页，非文件' : dl.status}）`);
-        log(`[下载] 网盘 ${type}:${id} 失败（${dl.status === 'html_page' ? '响应为 HTML 页' : dl.status}）`);
-        await fs.promises.rm(dl.tmpPath, { force: true }).catch(() => { /* 清理类失败 best-effort 忽略（防主流程中断） */ });
-        continue;
-      }
-      await netdiskFinalize(urlKey, type, id, postDir, hashIndex, out, dl);
+    for (const id of ids) await downloadSingleNetdiskLink(type, p, id, postDir, hashIndex, out);
+  }
+  return out;
+}
+
+/** 帖内 .txt 二级发现：不少作者的 .txt 附件内容就是网盘链接（一行一个 mega 链接）——
+ * 这些链接不在正文里，正文扫描抓不到，故在文件下载完成后读帖内 .txt 再触发网盘下载。 */
+async function downloadNetdiskFromTxtFiles(postDir, files, hashIndex) {
+  const out = [];
+  if (!CONFIG.megaFromTxt) return out;
+  const LINK_RE = /https?:\/\/[^\s"'<>]+/g;
+  const candidateLinks = new Set();
+  for (const f of (files || [])) {
+    if (!f || !/\.txt$/i.test(String(f.filename || ''))) continue;
+    const absPath = f.savePath || path.join(postDir, f.rel || f.filename);
+    let size = 0;
+    try { size = (await fs.promises.stat(absPath)).size; } catch { continue; } // 未落盘/缺失 → 跳过
+    if (size > CONFIG.txtScanMaxBytes) continue; // 只读小文本（链接清单量级）
+    let text = '';
+    try { text = await fs.promises.readFile(absPath, 'utf8'); } catch { continue; }
+    for (const linkMatch of text.match(LINK_RE) || []) candidateLinks.add(linkMatch);
+  }
+  if (!candidateLinks.size) return out;
+  for (const link of candidateLinks) {
+    for (const [type, p] of Object.entries(NETDISK_PROVIDERS)) {
+      if (!p.match.test(link)) continue;
+      const id = p.extract(link);
+      if (!id) continue;
+      console.log(`  [网盘发现] ${type}:${idTail(id)}（来自帖内 txt）`);
+      await downloadSingleNetdiskLink(type, p, id, postDir, hashIndex, out);
+      break; // 一个链接只由一个 provider 处理
     }
   }
   return out;
@@ -1860,6 +1923,11 @@ async function downloadOnePost(listPost, meta, targetPath, opts = {}, shared = n
   const netdiskJobs = await downloadNetdiskFiles(detail, postDir, hashIndex);
   if (netdiskJobs.length) checked.push(...netdiskJobs);
   for (const nj of netdiskJobs) emit({ type: 'netdisk.downloaded', data: { filename: nj.filename, size: nj.size ?? null } });
+
+  // ⑤.6 帖内 txt 二级发现：.txt 附件内容常是网盘链接（正文里没有）——文件下完后读 txt 再触发网盘下载
+  const txtNetdiskJobs = await downloadNetdiskFromTxtFiles(postDir, checked, hashIndex);
+  if (txtNetdiskJobs.length) checked.push(...txtNetdiskJobs);
+  for (const nj of txtNetdiskJobs) emit({ type: 'netdisk.downloaded', data: { filename: nj.filename, size: nj.size ?? null } });
 
   // ⑤ 后置 html：下载完成刷新该帖索引（size=实际落盘，图片墙/状态更新）
   await writeOnePostIndex(detail, checked, plan.creatorName, targetPath);
