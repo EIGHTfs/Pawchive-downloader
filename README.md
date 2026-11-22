@@ -206,7 +206,7 @@ Pawchive 文件路径是 SHA-256 内容寻址（`/<2位>/<3位>/<64位hash>.<ext
 | `PAWCHIVE_CURL_CONNECT_TIMEOUT` | `30` | curl 连接超时秒（下载与流式请求统一） |
 | `PAWCHIVE_WEB_BASE` | `https://pawchive.pw` | 网页基址（原链接/创作者页 href） |
 | `PAWCHIVE_TEMP_SUFFIX` | `.tmp` | 断点续传临时文件后缀 |
-| `PAWCHIVE_USER_AGENT` | Chrome 126 UA | 下载/探测请求 UA（file host 要求可识别 UA） |
+| `PAWCHIVE_USER_AGENT` | `Pawchive-downloader/1.0 (+仓库地址)` | 下载/探测请求 UA。**必须可识别并带联系方式**：file host 明确拒绝浏览器伪装 UA，返回 403 + 376B 提示页（要求 ≤1 请求/秒、≤5 活动下载、可识别 UA） |
 | `PAWCHIVE_TPS` | `1` | 每秒新建连接上限（反爬要求 ≤1） |
 | `PAWCHIVE_PAGE_INTERVAL_MS` | `1000` | 列表翻页间隔（防连发限流） |
 | `PAWCHIVE_RETRY_TIMES` | `10` | 下载重试次数 |
@@ -279,6 +279,7 @@ node mcp-server.js   # stdio MCP 协议（无参数）
 ## 未来规划
 
 - 项目定位 = **CLI 下载器 + WebUI 兼容层**：CLI 持续增强（并发调度、反爬自适应限速、全量同步调度、更多平台适配）；WebUI 兼容层（KToolBox 前端接我们 Node 后端——协议切换）已落地（见上）；上游 API 文档类产物由提取工具维护（见 `docs/` 留档）
+- **MEGA 网盘下载**（待办）：部分作者的帖子正文附件 `.txt` 内容就是 `mega.nz/file/...` 链接（文件本体在 MEGA 上）。当前网盘 provider 只实现 Google Drive，MEGA 需新增 provider（含 MEGA 传输层密钥解析）——现状是 `.txt` 正常落盘、链接可人工访问
 
 ## 版本记录
 

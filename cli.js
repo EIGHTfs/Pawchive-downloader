@@ -84,9 +84,9 @@ const CONFIG = {
   creatorPrefixFormat: process.env.PAWCHIVE_CREATOR_PREFIX_FORMAT || '({service}) ', // 大小写冲突时目录前缀模板（可用 {service}）
   filenameSuffixFormat: process.env.PAWCHIVE_FILENAME_SUFFIX_FORMAT || '_{size}', // 同帖内同名不同内容文件的后缀模板（{size}=文件大小字节，无大小退序号；放扩展名前）
 
-  // 下载 UA（可配；file host 反爬要求「可识别 UA」）
+  // 下载 UA（可配；file host 反爬要求「可识别 UA + 联系方式」——伪装浏览器会被 403+376B 拒绝）
   userAgent: process.env.PAWCHIVE_USER_AGENT
-    || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+    || 'Pawchive-downloader/1.0 (+https://github.com/EIGHTfs/Pawchive-downloader)',
 
   // 下载参数（env；默认 TPS=1 匹配 file host 明示 ≤1 req/s）
   tps: Number(process.env.PAWCHIVE_TPS) || 1,
