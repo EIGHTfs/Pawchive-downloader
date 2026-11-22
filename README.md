@@ -284,6 +284,7 @@ node mcp-server.js   # stdio MCP 协议（无参数）
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.0.3 | 2026-11-22 | **修复快速跳过崩溃**：创作者批量模式下快速跳过调用本地 html 刷新时，目标目录取自 slim 帖对象的 `relDir`（该字段仅存在于创作者级索引条目），值为 undefined 导致 `path.join` 抛 ERR_INVALID_ARG_TYPE 整轮中断；改为以 `postId → 创作者索引条目` 映射取 `relDir`，并在刷新函数入口对缺失 `relDir` 做防御（返回未完成、回退正常下载）。同批说明：文件 host 拒绝伪装浏览器 UA（403 + 376B 提示页，要求可识别 UA 与联系方式），部署配置的 UA 应改为工具名+联系方式形式 |
 | v1.0.2 | 2026-10-02 | **多地址 + 文本文件 + 相对地址 + 快速跳过默认开**：地址参数支持逗号分割（`"URL1,URL2"`）/ 文本文件（每行一个地址，`#` 注释/空行跳过）/ 相对地址（`fanbox/user/id`——webBase 自动拼接）；多地址**串行**执行（反爬安全）；`PAWCHIVE_FAST_SKIP` 默认开启（显式 `0` 关——已完整帖零网络本地刷新 html）；同批审计拆分批次（adapter/core/cli 高复杂度函数抽取——行为不变） |
 | v1.0.1 | 2026-10-01 | **进度条升级**：独立模块 `progress.js` 多行渲染（每个下载任务一行 + 底部汇总行，ANSI 上移重绘不互相覆盖）；`--progress <style>` 参数 / env `PAWCHIVE_PROGRESS` 指定样式——`single` 单行汇总 / `multi` 多行每任务一行（默认）/ `ipull` 模仿 ipull fancy（状态图标 ↓下载/→复用 + 名称/大小/百分比/bar/速度列对齐）；同批修复：跨进程锁死锁检测（process.kill 跨平台）、拿不到锁等待重查不误报、网盘日志关键部分（idTail） |
 | v1.0.0 | 2026-10-01 | **MCP server（供 AI 使用）**：新增 `mcp-server.js`——stdio 传输、零依赖手写 MCP JSON-RPC（initialize/tools/list/tools/call），复用 core.js 业务能力暴露 **32 个 MCP 工具**（任务全套 12 / 创作者 5 / auto-sync 8 / 查询配置 5 / blockers 2）；v1 无鉴权 + env `PAWCHIVE_MCP_TOKEN` 可选 Bearer；DSH 等 MCP 客户端 stdio 拉起即可用（第三个协议面——引擎 cli / 业务 core / 协议 adapter+MCP server） |

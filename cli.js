@@ -1905,6 +1905,7 @@ function extractDescHtml(html) {
 /** 快速跳过：纯本地 html 刷新（零网络/零下载配额）——旧 html 记录 + 磁盘 stat 校验 + 正文网盘项重建 → 重写帖 html。
  * 返回 true=下载完成（已刷新 html）；false=未完成（文件缺失/大小不符/正文网盘本地无对应文件/无旧 html）→ 调用方回退正常下载。 */
 async function refreshPostIndexLocal(listPost, plan, targetPath, hashIndex) {
+  if (!listPost || !listPost.relDir) return false; // 无 relDir（slim 帖对象/创作者索引缺目录）→ 未完成走正常下载
   const postDir = path.join(targetPath, listPost.relDir);
   const htmlPath = path.join(postDir, CONFIG.indexFilename);
   let oldHtml = '';
@@ -1960,11 +1961,11 @@ async function downloadAuthor(posts, meta, targetPath, opts = {}) {
   // 不再 getPost 解析详情与重复检查（0 文件帖/未生成帖 html 的不跳，照常处理）
   // 【设计】单帖模式（用户显式指定单帖 URL）不做快速跳过——单帖=明确要处理该帖（可能修复/重下/检查），
   // 快速跳过仅面向创作者批量模式：全量补漏时对已完整且无网盘链接的帖零网络本地刷新，省下载配额。
-  const completedPosts = new Set();
+  const completedPosts = new Map(); // postId → 创作者索引条目（含 relDir：slim 帖对象无 relDir，快速跳过需用它定位帖子目录）
   try {
     const creatorIndex = parseIndexObj(await fs.promises.readFile(path.join(plan.creatorDir, CONFIG.indexFilename), 'utf8'));
     for (const p of (creatorIndex && creatorIndex.posts) || []) {
-      if (meta.mode !== 'post' && CONFIG.fastSkip && p.relDir && p.fileCount > 0 && p.downloaded === p.fileCount && p.driveLinks === false) completedPosts.add(String(p.postId)); // 快速跳过受 PAWCHIVE_FAST_SKIP 控制（默认关→全量检查补外链/网盘；开→仅明确无网盘链接的完整帖跳过）
+      if (meta.mode !== 'post' && CONFIG.fastSkip && p.relDir && p.fileCount > 0 && p.downloaded === p.fileCount && p.driveLinks === false) completedPosts.set(String(p.postId), p); // 快速跳过受 PAWCHIVE_FAST_SKIP 控制（默认关→全量检查补外链/网盘；开→仅明确无网盘链接的完整帖跳过）
     }
     if (completedPosts.size) log(`[索引] 创作者总览检测到 ${completedPosts.size} 帖已完整，直接跳过（不解析详情）`);
   } catch { /* 无创作者级 html（首次）→ 全量处理 */ }
@@ -1977,7 +1978,7 @@ async function downloadAuthor(posts, meta, targetPath, opts = {}) {
     if (meta.mode !== 'post' && completedPosts.has(String(posts[i].id))) {
       // 快速跳过：纯本地 html 刷新（零网络/零下载配额——不拉详情不下载）；磁盘校验不符 → 回退正常下载
       // （单帖模式不跳过——见上方 completedPosts 构建注释：单帖=明确处理该帖）
-      const refreshed = await refreshPostIndexLocal(posts[i], plan, targetPath, ctx.hashIndex);
+      const refreshed = await refreshPostIndexLocal({ ...posts[i], relDir: (completedPosts.get(String(posts[i].id)) || {}).relDir }, plan, targetPath, ctx.hashIndex);
       if (!refreshed) {
         completedPosts.delete(String(posts[i].id));
         log(`[索引] ${posts[i].title || posts[i].id} 本地校验未完成（缺文件/大小不符/网盘未下），回退正常下载`);
