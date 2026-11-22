@@ -72,7 +72,9 @@ const CONFIG = {
   fetchTimeoutMs: 120000,     // 创作者列表独立 fetch 长超时（apiRequest 30s 不够 15MB 全量拉取）
   netdiskKeepMinBytes: 65536, // 网盘 temp 保留下限（<64KB 视为病毒确认页残留，删掉从头下）
   probeWindowMs: 5000,        // 真实下载测速窗口（探 file host 限频；env PAWCHIVE_PROBE_MS 可覆盖）
-  downloadTimeoutMs: 300000,  // 单文件下载超时（5 分钟）
+  stallSpeedBytes: Number(process.env.PAWCHIVE_STALL_SPEED_BYTES) || 1024, // 停滞判定：平均速度低于此值（字节/秒）
+  stallSeconds: Number(process.env.PAWCHIVE_STALL_SECONDS) || 120, // 低速需持续这么多秒才判定停滞并中止（单次无进展的上限）
+  netdiskRetryTimes: Number(process.env.PAWCHIVE_NETDISK_RETRY_TIMES) || 3, // 网盘下载失败按断点续传重试次数（仅临时故障）
   tempSuffix: process.env.PAWCHIVE_TEMP_SUFFIX || '.tmp', // 断点续传临时文件后缀（env 可配）
   strictVerify: process.env.PAWCHIVE_STRICT_VERIFY === '1', // 强校验模式（默认关）：下载完计算本地 sha256 vs 目标 serverPath hash——不符优先修复（重下）不保留坏文件
 
@@ -716,7 +718,7 @@ async function netdiskDownloadOnce(url, netdiskTmp) {
   try { if ((await fs.promises.stat(netdiskTmp)).size < CONFIG.netdiskKeepMinBytes) await fs.promises.rm(netdiskTmp, { force: true }).catch(() => { /* 清理类失败 best-effort 忽略（防主流程中断） */ }); } catch { /* 无 tmp 残留按新下载 */ }
   try { tempSize = (await fs.promises.stat(netdiskTmp)).size; } catch { tempSize = 0; } // 无 tmp = 从头下载
   let result;
-  try { result = await streamOnce(url, netdiskTmp, tempSize, null, { shouldAbort: () => false }); } catch { result = { status: 'err' }; } // stream 异常→按失败处理
+  try { result = await streamOnce(url, netdiskTmp, tempSize, null, { shouldAbort: () => false }); } catch { result = { status: 'err' }; } // 大文件由停滞超时保护（有进展就不会断）
   if (result.status !== 'ok') return { status: result.status, tmpPath: netdiskTmp };
   let size = 0;
   try { size = (await fs.promises.stat(netdiskTmp)).size; } catch { /* stat 失败按 0 处理 */ }
@@ -775,11 +777,23 @@ async function downloadSingleNetdiskLink(type, provider, id, postDir, hashIndex,
     return;
   }
   const netdiskTmp = path.join(postDir, sanitizeName(`netdisk_${type}_${id}`) + CONFIG.tempSuffix); // 以完整 URL 作 id 时 tmp 名必须消毒（否则 // 被当路径分隔）
-  const dl = await netdiskDownloadOnce(url, netdiskTmp);
-  if (dl.status !== 'ok') {
-    console.log(`  [网盘失败] ${type}:${idTail(id)}（${dl.status === 'html_page' ? '响应为 HTML 页，非文件' : dl.status}）`);
-    log(`[下载] 网盘 ${type}:${idTail(id)} 失败（${dl.status === 'html_page' ? '响应为 HTML 页' : dl.status}）`);
-    await fs.promises.rm(dl.tmpPath, { force: true }).catch(() => { /* 清理类失败 best-effort 忽略（防主流程中断） */ });
+  // 网盘文件常是 GB 级：失败后按断点续传自动重试（超时/连接中断属临时故障）；只有确定性失败（HTTP 4xx/5xx、响应是 HTML 页）才放弃
+  let dl = null;
+  for (let attempt = 1; attempt <= CONFIG.netdiskRetryTimes; attempt++) {
+    dl = await netdiskDownloadOnce(url, netdiskTmp);
+    if (dl.status === 'ok') break;
+    if (/curl_exit_22|html_page/.test(String(dl.status))) break; // 确定性失败：重试无意义
+    if (attempt < CONFIG.netdiskRetryTimes) {
+      console.log(`  [网盘重试 ${attempt}/${CONFIG.netdiskRetryTimes}] ${type}:${idTail(id)}（${dl.status}，从已下载部分续传）`);
+      await sleep(CONFIG.retryIntervalMs);
+    }
+  }
+  if (!dl || dl.status !== 'ok') {
+    const status = (dl && dl.status) || 'err';
+    const certainFailure = /curl_exit_22|html_page/.test(String(status)); // 确定性失败才清临时文件
+    if (certainFailure) await fs.promises.rm(dl.tmpPath, { force: true }).catch(() => { /* 清理类失败 best-effort 忽略（防主流程中断） */ });
+    console.log(`  [网盘失败] ${type}:${idTail(id)}（${status === 'html_page' ? '响应为 HTML 页，非文件' : status}）${certainFailure ? '' : ' —— 已保留断点，下次运行续传'}`);
+    log(`[下载] 网盘 ${type}:${idTail(id)} 失败（${status === 'html_page' ? '响应为 HTML 页' : status}）${certainFailure ? '' : '，保留断点'}`);
     return;
   }
   await netdiskFinalize(urlKey, type, id, postDir, hashIndex, out, dl);
@@ -1067,11 +1081,14 @@ async function downloadFile(job, { onProgress = null, expectedSize: optExpected 
  * 进度：轮询 .tmp 文件大小（同 iwara aria2 tellStatus 轮询思路）。
  * 返回 {status, totalSize}；非 ok 由上层按重试策略处理。
  */
-async function streamOnce(fileUrl, tmpPath, tempSize, onProgress = null, abortCtl = null) {
+async function streamOnce(fileUrl, tmpPath, tempSize, onProgress = null, abortCtl = null, opts = {}) {
   await fs.promises.mkdir(path.dirname(tmpPath), { recursive: true }); // curl 不会自动建目录（移出 Promise executor，async executor 抛错会变未处理 rejection）
   return new Promise(resolve => {
     const args = [
-      '-sS', '-f', '-L', '--http1.1', '--connect-timeout', String(CONFIG.curlConnectTimeout), '--max-time', String(Math.ceil(CONFIG.downloadTimeoutMs / 1000)), // -f：HTTP 4xx/5xx 时 curl 直接失败（exit 22），404 页面不落盘
+      '-sS', '-f', '-L', '--http1.1', '--connect-timeout', String(CONFIG.curlConnectTimeout),
+      // 超时语义=停滞超时：只要还在涨（有数据）就一直下，只有速度长时间低于阈值才中止；
+      // 不设 --max-time 总时长上限，否则 GB 级网盘文件无论多健康都会在下到一半时被掐断
+      '--speed-limit', String(CONFIG.stallSpeedBytes), '--speed-time', String(CONFIG.stallSeconds),
       '-H', `User-Agent: ${CONFIG.userAgent}`,
       '-H', 'Accept: */*',
       '-D', '-', // 响应头输出到 stdout（解析 Content-Length 作完整性校验基准，替代探测请求）
@@ -1997,6 +2014,22 @@ async function refreshPostIndexLocal(listPost, plan, targetPath, hashIndex) {
       if (!rec || !rec.rel) return false; // 正文有网盘链接但本地无对应文件（未下载/未记录）→ 未完成（走正常下载补网盘）
       let size = 0;
       try { size = (await fs.promises.stat(rec.rel)).size; } catch { return false; } // 网盘记录文件缺失→未完成
+      files.push({ filename: path.basename(rec.rel), size, exists: true, serverPath: hit.key, rel: path.relative(postDir, rec.rel), kind: 'archive' });
+    }
+  }
+  // 帖内 .txt 的网盘链接检查：不少帖子的网盘链接只在 .txt 附件里（正文没有），
+  // 若只看正文会把这些帖误判为"已完整"而永久跳过，故这里同样校验本地是否有对应网盘文件
+  for (const f of [...files]) {
+    if (!/\.txt$/i.test(String(f.filename || '')) || (Number(f.size) || 0) > CONFIG.txtScanMaxBytes) continue;
+    let text = '';
+    try { text = await fs.promises.readFile(path.join(postDir, f.rel), 'utf8'); } catch { continue; }
+    for (const linkText of text.match(/https?:\/\/[^\s"'<>]+/g) || []) {
+      const hit = matchNetdiskLink(linkText);
+      if (!hit) continue;
+      const rec = hashIndex && hashIndex.get(hit.key);
+      if (!rec || !rec.rel) return false; // txt 里有网盘链接但本地无对应文件 → 未完成（走正常下载补网盘）
+      let size = 0;
+      try { size = (await fs.promises.stat(rec.rel)).size; } catch { return false; } // 记录文件缺失/大小读不到 → 未完成
       files.push({ filename: path.basename(rec.rel), size, exists: true, serverPath: hit.key, rel: path.relative(postDir, rec.rel), kind: 'archive' });
     }
   }
