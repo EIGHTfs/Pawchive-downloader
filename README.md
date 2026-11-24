@@ -55,6 +55,7 @@ node cli.js <url|地址文件|逗号多地址|相对地址> [path] [--dryrun] [-
 - **逗号多地址**：`node cli.js "URL1,URL2,URL3" [path]`
 - **文本文件**（每行一个地址，`#` 注释/空行跳过）：`node cli.js /path/to/addresses.txt [path]`
 - **相对地址**（webBase 自动拼接——`fanbox/user/id`、`patreon/user/id` 等）：`node cli.js "fanbox/user/107514250" [path]`
+- **断点续跑**（网盘大文件常被远端中断，靠多轮续传磨完）：`scripts/run-sync-loop.sh <URL> [最大轮数] [数据根]`
 
 | 参数 | 说明 |
 |------|------|
